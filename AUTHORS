@@ -1,0 +1,13 @@
+# Contributors to multicat
+# $Id: AUTHORS 94 2010-01-04 20:15:43Z gatty $
+# 
+# The format of this file was inspired by the Linux kernel CREDITS file.
+# Authors are listed alphabetically.
+# 
+# The fields are: name (N), email (E), web-address (W), CVS account login (C),
+# PGP key ID and fingerprint (P), description (D), and snail-mail address (S).
+
+N: Christophe Massiot
+E: massiot AT via DOT ecp DOT fr
+C: massiot
+D: Most of the code
