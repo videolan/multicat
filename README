@@ -1,6 +1,7 @@
 $Id: README 26 2009-10-20 18:44:22Z massiot $
 
 Welcome to Multicat!
+====================
 
 The multicat package contains a set of tools designed to easily and
 efficiently manipulate multicast streams in general, and MPEG-2
@@ -29,7 +30,100 @@ signal over several contribution links.
 
 The multicat suite of applications is very lightweight and designed to
 operate in tight environments. Memory and CPU usages are kept to a minimum,
-and they feature only one thread of execution. They have no dependancy.
+and they feature only one thread of execution.
 
--- 
-Meuuh 2010-01-07
+
+The socket description format
+=============================
+
+For conveniency all tools use the same way of describing a socket in a
+program argument:
+
+<connect address>:<connect port>@<bind address>:<bind port>
+
+All parts are optional; default port (1234) or wildcard address will then
+be used.
+
+Some examples:
+
+Reading all streams coming to port 5004:
+    @:5004
+Reading from a multicast stream on port 5004:
+    @239.255.0.1:5004
+The same, with source-specific multicast:
+    192.168.0.1@239.255.0.1:5004
+Writing to a multicast stream on port 5004:
+    239.255.0.1:5004
+The same, but binding to a specific interface:
+    239.255.0.1:5004@192.168.0.2
+
+
+Using Multicat
+==============
+
+Recording a multicast address to a file:
+
+multicat @239.255.0.1:5004 /tmp/myfile.ts
+
+This will also create file /tmp/myfile.aux. Playing back the file:
+
+multicat -p 68 /tmp/myfile.ts 239.255.0.2:5004
+
+Adding an RTP header to an existing multicast stream:
+
+multicat -p 68 -u @239.255.0.1:5004 239.255.0.2:5004
+
+The PCR PID is here supposed to be 68. If you don't specify it, the timestamps
+will not be RFC-compliant (but will work in most cases). You can use the
+get_pcr_pid tool from libdvbpsi to determine it. Otherwise, if you are sure
+the stream contains a single program, and only one PID carries a PCR, you can
+pass "-p 8192" the disable the PID check. This isn't on by default because
+it can produce awful things with multi-program transport streams, and the
+world would be a better place if people had to knowingly turn it on.
+
+
+Using IngesTS
+=============
+
+ingests -p 68 /tmp/afile.ts
+
+This will create file /tmp/afile.aux. 68 is supposed to be the PCR PID.
+The same note as above applies to ingesTS.
+
+Playing the file:
+
+multicat -p 68 /tmp/afile.ts 239.255.0.2:5004
+
+
+Using OffseTS
+=============
+
+We want to take the first 60 minutes of a TS file. We must scale it in a
+27 MHz clock:
+60 * 60 (seconds) * 27000000 (MHz) = 97200000000
+
+Find the offset in 1316-blocks:
+
+offsets /tmp/myfile.aux 97200000000
+
+It returns for instance "556896". Then cut the file using dd:
+
+dd if=/tmp/myfile.ts of=/tmp/mynewfile.ts bs=1316 count=556896
+
+Alternatively, if we want to *remove* the first hour:
+
+dd if=/tmp/myfile.ts of=/tmp/mynewfile.ts bs=1316 skip=556896
+
+It can also be done with multicat using the -s and -n options.
+
+
+Using AggregaRTP and DesaggregaRTP
+==================================
+
+Splitting an RTP stream to two streams with different routing policies:
+
+aggregartp @239.255.0.1:5004 239.1.0.1:5004@192.168.0.1 239.2.0.1:5004@172.16.0.1
+
+At the other end, reassembling the two streams into one usable stream:
+
+desaggregartp 192.168.0.1@239.1.0.1:5004 172.16.0.1@239.2.0.1:5004 239.254.0.1:5004
