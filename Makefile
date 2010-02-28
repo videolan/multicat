@@ -10,6 +10,8 @@ OBJ_AGGREGARTP = aggregartp.o util.o
 OBJ_DESAGGREGARTP = desaggregartp.o util.o
 OBJ_OFFSETS = offsets.o
 
+BIN = $(DESTDIR)/usr/bin
+
 all: multicat ingests aggregartp desaggregartp offsets
 
 $(OBJ_MULTICAT): Makefile util.h
@@ -35,3 +37,10 @@ offsets: $(OBJ_OFFSETS)
 
 clean:
 	-rm -f multicat $(OBJ_MULTICAT) ingests $(OBJ_INGESTS) aggregartp $(OBJ_AGGREGARTP) desaggregartp $(OBJ_DESAGGREGARTP) offsets $(OBJ_OFFSETS)
+
+install: all
+	@install -d $(BIN)
+	@install multicat ingests aggregartp desaggregartp offsets $(BIN)
+
+uninstall:
+	@rm $(BIN)/multicat $(BIN)/ingests $(BIN)/aggregartp $(BIN)/desaggregartp $(BIN)/offsets
