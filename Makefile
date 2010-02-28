@@ -10,7 +10,9 @@ OBJ_AGGREGARTP = aggregartp.o util.o
 OBJ_DESAGGREGARTP = desaggregartp.o util.o
 OBJ_OFFSETS = offsets.o
 
-BIN = $(DESTDIR)/usr/bin
+PREFIX ?= /usr/local
+BIN = $(DESTDIR)/$(PREFIX)/bin
+MAN = $(DESTDIR)/$(PREFIX)/share/man/man1
 
 all: multicat ingests aggregartp desaggregartp offsets
 
