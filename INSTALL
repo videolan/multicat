@@ -4,5 +4,4 @@ Installing Multicat
 ===================
 
 No autotools yet... You'd have to tweak the Makefile by hand. Compile the
-program with `make`. and install with `make install`. Some tools require the
-installation of libdvbpsi and libdvbpsi-devel (depending on your distribution).
+program with `make`. and install with `make install`.
