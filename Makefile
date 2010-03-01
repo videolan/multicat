@@ -23,16 +23,16 @@ $(OBJ_DESAGGREGARTP): Makefile util.h
 $(OBJ_OFFSETS): Makefile
 
 multicat: $(OBJ_MULTICAT)
-	$(CC) $(LDLIBS) -o $@ $(OBJ_MULTICAT)
+	$(CC) -o $@ $(OBJ_MULTICAT) $(LDLIBS)
 
 ingests: $(OBJ_INGESTS)
-	$(CC) $(LDLIBS) -o $@ $(OBJ_INGESTS)
+	$(CC) -o $@ $(OBJ_INGESTS) $(LDLIBS)
 
 aggregartp: $(OBJ_AGGREGARTP)
-	$(CC) $(LDLIBS) -o $@ $(OBJ_AGGREGARTP)
+	$(CC) -o $@ $(OBJ_AGGREGARTP) $(LDLIBS)
 
 desaggregartp: $(OBJ_DESAGGREGARTP)
-	$(CC) $(LDLIBS) -o $@ $(OBJ_DESAGGREGARTP)
+	$(CC) -o $@ $(OBJ_DESAGGREGARTP) $(LDLIBS)
 
 offsets: $(OBJ_OFFSETS)
 	$(CC) -o $@ $(OBJ_OFFSETS)
