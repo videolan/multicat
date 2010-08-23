@@ -67,7 +67,7 @@ static uint64_t i_buffer_length = DEFAULT_BUFFER_LENGTH * 27000;
 
 static void usage(void)
 {
-    msg_Raw( NULL, "Usage: desaggregartp [-i <RT priority>] [-b <buffer length>] [-U] [-m <mtu>] <src host 1> ... [<src host N>] <dest host>" );
+    msg_Raw( NULL, "Usage: desaggregartp [-i <RT priority>] [-t <ttl>] [-b <buffer length>] [-U] [-m <mtu>] <src host 1> ... [<src host N>] <dest host>" );
     msg_Raw( NULL, "    host format: [<connect addr>[:<connect port>]][@[<bind addr][:<bind port>]]" );
     msg_Raw( NULL, "    -U: strip RTP header" );
     msg_Raw( NULL, "    -b: buffer length in ms" );

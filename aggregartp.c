@@ -59,10 +59,10 @@ static uint16_t i_rtp_cc = 0;
 
 static void usage(void)
 {
-    msg_Raw( NULL, "Usage: aggregartp [-i <RT priority>] [-t <ttl>] [-w] [-s <SSRC IP>] [-U] [-m <mtu>] @<src host> <dest host 1>[,<weight 1>] ... [<dest host N>,<weight N>]" );
+    msg_Raw( NULL, "Usage: aggregartp [-i <RT priority>] [-t <ttl>] [-w] [-o <SSRC IP>] [-U] [-m <mtu>] @<src host> <dest host 1>[,<weight 1>] ... [<dest host N>,<weight N>]" );
     msg_Raw( NULL, "    host format: [<connect addr>[:<connect port>]][@[<bind addr][:<bind port>]]" );
     msg_Raw( NULL, "    -w: overwrite RTP timestamps" );
-    msg_Raw( NULL, "    -S: overwrite RTP SSRC" );
+    msg_Raw( NULL, "    -o: overwrite RTP SSRC" );
     msg_Raw( NULL, "    -U: prepend RTP header" );
     exit(EXIT_FAILURE);
 }
