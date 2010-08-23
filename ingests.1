@@ -1,0 +1,38 @@
+.TH Ingests "1" "August 23, 2010" "Multicat 1.0"
+.SH NAME
+ingests \- Build an auxiliary file for multicat
+.SH SYNOPSIS
+.B ingests
+\fI-p <PCR PID>\fR [\fI-m <payload size>\fR]>\fR] <input ts>
+.SH DESCRIPTION
+Ingests is a companion application designed to manipulate TS files. It reads
+the PCR values of the file, and builds the auxiliary file that is necessary
+for multicat.
+The combination of ingests and multicat makes a simple and efficient TS file streamer.
+.SH OPTIONS
+\fB\-m\fR <payloadsize>
+Size of the payload
+.TP
+.B \-h
+Show summary of options
+.TP
+\fB\-m\fR <payloadsize>
+Size of the payload
+.TP
+\fB\-p\fR <PCR PID>
+PCR PID to use
+.SH SEE ALSO
+.BR aggregartp (1).
+.BR desaggregartp (1).
+.BR multicat (1),
+.BR offsets (1).
+.br
+Read the README file for more information about the configuration of ingests.
+.SH AUTHOR
+ingests was written by Christophe Massiot.
+.SH LICENCE
+This program is free software; you can redistribute it and/or modify it under the terms of
+version 2 of the GNU General Public License as published by the Free Software Foundation.
+.PP
+This manual page was written by Rémi Duraffort <ivoire at videolan dot org>,
+for the Debian project (and may be used by others).

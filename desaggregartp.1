@@ -1,0 +1,44 @@
+.TH Desaggregartp "1" "August 23, 2010" "Multicat 1.0"
+.SH NAME
+desaggregartp \- Reorders incoming packets and reconstitutes the original RTP stream.
+.SH SYNOPSIS
+.B desaggregartp
+[\fI-i <RT priority>\fR] [\fI-t <ttl>\fR] [\fI-b <buffer length>\fR] [\fI-U\fR] [\fI-m <mtu>\fR]
+<src host 1> ... [\fI<src host N>\fR] <dest host>
+.SH DESCRIPTION
+Desaggregartp is the companion software of aggregartp. It rorders incoming packets and reconstitutes the original RTP stream.
+.SH ITEMS
+Host format \fB[<connect addr>[:<connect port>]][@[<bind addr][:<bind port>]]\fR
+.SH OPTIONS
+\fB\-b\fR <buffer length>
+buffer length in ms
+.TP
+.B \-h
+Show summary of options
+.TP
+\fB\-i\fR <RT priority>
+Real time priority
+.TP
+\fB\-m\fR <mtu>
+Specify the MTU
+.TP
+\fB\-t\fR <ttl>
+TTL of the packets send by aggregartp
+.TP
+.B \-U
+Strip RTP header
+.SH SEE ALSO
+.BR aggregartp (1).
+.BR ingests (1).
+.BR multicat (1),
+.BR offsets (1).
+.br
+Read the README file for more information about the configuration of desaggregartp.
+.SH AUTHOR
+desaggregartp was written by Christophe Massiot.
+.SH LICENCE
+This program is free software; you can redistribute it and/or modify it under the terms of
+version 2 of the GNU General Public License as published by the Free Software Foundation.
+.PP
+This manual page was written by Rémi Duraffort <ivoire at videolan dot org>,
+for the Debian project (and may be used by others).

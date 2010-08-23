@@ -43,6 +43,8 @@ clean:
 install: all
 	@install -d $(BIN)
 	@install multicat ingests aggregartp desaggregartp offsets $(BIN)
+	@install multicat.1 ingests.1 aggregartp.1 desaggregartp.1 offsets.1 $(MAN)
 
 uninstall:
 	@rm $(BIN)/multicat $(BIN)/ingests $(BIN)/aggregartp $(BIN)/desaggregartp $(BIN)/offsets
+	@rm $(MAN)/multicat.1 $(MAN)/ingests.1 $(MAN)/aggregartp.1 $(MAN)/desaggregartp.1 $(MAN)/offsets.1

@@ -1,0 +1,73 @@
+.TH Multicat "1" "August 23, 2010" "Multicat 1.0"
+.SH NAME
+multicat \- Multicast equivalent of Netcat
+.SH SYNOPSIS
+.B multicat
+[\fI-i <RT priority>\fR] [\fI-t <ttl>\fR] [\fI-p <PCR PID>\fR] [\fI-s <chunks>\fR]
+[\fI-n <chunks>\fR] [\fI-d <time>\fR] [\fI-a\fR] [\fI-S <SSRC IP>\fR] [\fI-u\fR]
+[\fI-U\fR] [\fI-m <payload size>\fR] <input item> <output item>
+.SH DESCRIPTION
+Multicat is a 1 input/1 output application. Inputs and outputs can be network
+streams (unicast and multicast), files, character devices or FIFOs. It is thought
+to be a multicast equivalent of the popular netcat tool.
+
+Multicat tries to rebuild the internal clock of the input stream; but it wants
+to remain agnostic of what is transported, so in case of files the said clock
+is stored to an auxiliary file (example.aux accompanies example.ts) while
+recording. Other inputs are considered "live", and the input clock is simply
+derived from the reception time of the packets.
+.SH ITEMS
+Item format \fB<file path | device path | FIFO path | network host>\fR
+.TP
+Host format \fB[<connect addr>[:<connect port>]][@[<bind addr][:<bind port>]]\fR
+.SH OPTIONS
+.B \-a
+Append to existing destination file (risky)
+.TP
+\fB\-d\fR <time>
+Exit after a definite time (in 27 MHz units)
+.TP
+\fB\-i\fR <RT priority>
+Real time priority
+.TP
+.B \-h
+Show summary of options
+.TP
+\fB\-m\fR <payload size>
+Size of the payload chunk, excluding optional RTP header (default 1316)
+.TP
+\fR\-n\fR <chunks>
+Exit after playing N chunks of payload
+.TP
+\fB\-p\fR <PCR PID>
+PCR PID
+.TP
+\fB\-s\fR <chunks>
+Skip the first N chunks of payload
+.TP
+\fB\-S\fR <SSRC IP>
+Overwrite or create RTP SSRC
+.TP
+\fB\-t\fR <ttl>
+TTL of the packets send by multicat
+.TP
+.B \-u
+Source has no RTP header
+.TP
+.B \-U
+Destination has no RTP header
+.SH SEE ALSO
+.BR aggregartp (1),
+.BR desaggregartp (1).
+.BR ingests (1).
+.BR offsets (1).
+.br
+Read the README file for more information about the configuration of multicat.
+.SH AUTHOR
+multicat was written by Christophe Massiot.
+.SH LICENCE
+This program is free software; you can redistribute it and/or modify it under the terms of
+version 2 of the GNU General Public License as published by the Free Software Foundation.
+.PP
+This manual page was written by Rémi Duraffort <ivoire at videolan dot org>,
+for the Debian project (and may be used by others).

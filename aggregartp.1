@@ -1,0 +1,47 @@
+.TH Aggregartp "1" "August 23, 2010" "Multicat 1.0"
+.SH NAME
+aggregartp \- Splits a single RTP stream to several contribution links with load balancing.
+.SH SYNOPSIS
+.B aggregartp
+[\fI-i <RT priority>\fR] [\fI-t <ttl>\fR] [\fI-o\fR] [\fI-o <SSRC IP>\fR] [\fI-U\fR]
+[\fI-m <mtu>\fR] @<src host> <dest host 1>[\fI,<weight 1>\fR] ... [\fI<dest host N>,<weight N>\fR]
+.SH DESCRIPTION
+Aggregartp split a single RTP stream to several contributions links with load balancing.
+.SH ITEMS
+Host format \fB[<connect addr>[:<connect port>]][@[<bind addr][:<bind port>]]\fR
+.SH OPTIONS
+.B \-h
+Show summary of options
+.TP
+\fB\-i\fR <RT priority>
+Real time priority
+.TP
+\fB\-m\fR <mtu>
+Specify the MTU
+.TP
+\fB\-o\fR <SSRC IP>
+RTP SSRC
+.TP
+\fB\-t\fR <ttl>
+TTL of the packets send by aggregartp
+.TP
+.B \-U
+Prepend RTP header
+.TP
+.B \-w
+Overwrite RTP timestamps
+.SH SEE ALSO
+.BR desaggregartp (1).
+.BR ingests (1).
+.BR multicat (1),
+.BR offsets (1).
+.br
+Read the README file for more information about the configuration of aggregartp.
+.SH AUTHOR
+aggregartp was written by Christophe Massiot.
+.SH LICENCE
+This program is free software; you can redistribute it and/or modify it under the terms of
+version 2 of the GNU General Public License as published by the Free Software Foundation.
+.PP
+This manual page was written by Rémi Duraffort <ivoire at videolan dot org>,
+for the Debian project (and may be used by others).
