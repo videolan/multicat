@@ -42,6 +42,7 @@ clean:
 
 install: all
 	@install -d $(BIN)
+	@install -d $(MAN)
 	@install multicat ingests aggregartp desaggregartp offsets $(BIN)
 	@install multicat.1 ingests.1 aggregartp.1 desaggregartp.1 offsets.1 $(MAN)
 

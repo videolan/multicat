@@ -36,6 +36,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <sys/ioctl.h>
+#include <net/if.h>
+#include <unistd.h>
 
 #include "util.h"
 
@@ -171,6 +174,34 @@ void wall_Sleep( uint64_t i_delay )
 }
 
 /*****************************************************************************
+ * GetInterfaceIndex: returns the index of an interface
+ *****************************************************************************/
+static int GetInterfaceIndex( const char *psz_name )
+{
+    int i_fd;
+    struct ifreq ifr;
+
+    if ( (i_fd = socket( AF_INET, SOCK_DGRAM, 0 )) < 0 )
+    {
+        msg_Err( NULL, "unable to open socket (%s)", strerror(errno) );
+        exit(EXIT_FAILURE);
+    }
+
+    strncpy( ifr.ifr_name, psz_name, IFNAMSIZ );
+    ifr.ifr_name[IFNAMSIZ-1] = '\0';
+
+    if ( ioctl( i_fd, SIOCGIFINDEX, &ifr ) < 0 )
+    {
+        msg_Err( NULL, "unable to get interface index (%s)", strerror(errno) );
+        exit(EXIT_FAILURE);
+    }
+
+    close( i_fd );
+
+    return ifr.ifr_ifindex;
+}
+
+/*****************************************************************************
  * PrintSocket: print socket characteristics for debug purposes
  *****************************************************************************/
 static void PrintSocket( const char *psz_text, struct sockaddr_in *p_bind,
@@ -180,6 +211,20 @@ static void PrintSocket( const char *psz_text, struct sockaddr_in *p_bind,
              inet_ntoa( p_bind->sin_addr ), ntohs( p_bind->sin_port ) );
     msg_Dbg( NULL, "%s connect:%s:%u", psz_text,
              inet_ntoa( p_connect->sin_addr ), ntohs( p_connect->sin_port ) );
+}
+
+/*****************************************************************************
+ * PrintSocket6: print IPv6 socket characteristics for debug purposes
+ *****************************************************************************/
+static void PrintSocket6( const char *psz_text, struct sockaddr_in6 *p_bind,
+                         struct sockaddr_in6 *p_connect )
+{
+    char buf[INET6_ADDRSTRLEN];
+
+    msg_Dbg( NULL, "%s bind:[%s]:%u", psz_text,
+             inet_ntop( AF_INET6, &p_bind->sin6_addr, buf, sizeof(buf) ), ntohs( p_bind->sin6_port ) );
+    msg_Dbg( NULL, "%s connect:[%s]:%u", psz_text,
+             inet_ntop( AF_INET6, &p_connect->sin6_addr, buf, sizeof(buf) ), ntohs( p_connect->sin6_port ) );
 }
 
 /*****************************************************************************
@@ -207,9 +252,50 @@ static int ParseHost( struct sockaddr_in *p_sock, char *psz_host )
 }
 
 /*****************************************************************************
- * OpenSocket: parse argv and open sockets
+ * ParseHost6: parse an IPv6 host:port string
  *****************************************************************************/
-int OpenSocket( const char *_psz_arg, int i_ttl, unsigned int *pi_weight )
+static int ParseHost6( struct sockaddr_in6 *p_sock, int *pi_ifindex, char *psz_host )
+{
+    char *psz_token = strrchr( psz_host, ':' );
+    if ( psz_token && psz_token != psz_host && *(psz_token-1) == ']' )
+    {
+        char *psz_parser;
+        *psz_token++ = '\0';
+        p_sock->sin6_port = htons( strtol( psz_token, &psz_parser, 0 ) );
+        if ( *psz_parser ) return -1;
+    }
+    else
+        p_sock->sin6_port = htons( DEFAULT_PORT );
+
+    size_t len = strlen(psz_host);
+    if ( psz_host[0] == '[' && psz_host[len-1] == ']' )
+    {
+        psz_host[len-1] = '\0';
+        psz_host++;
+    }
+
+    psz_token = strrchr( psz_host, '%' );
+    if ( psz_token )
+    {
+        *psz_token++ = '\0';
+        *pi_ifindex = GetInterfaceIndex( psz_token );
+    }
+    else
+        *pi_ifindex = 0;
+
+    if ( !*psz_host )
+        p_sock->sin6_addr = in6addr_any;
+    else if ( !inet_pton( AF_INET6, psz_host, &p_sock->sin6_addr ) )
+        return -1;
+
+    return 0;
+}
+
+
+/*****************************************************************************
+ * OpenSocket4: parse argv and open IPv4 sockets
+ *****************************************************************************/
+int OpenSocket4( const char *_psz_arg, int i_ttl, unsigned int *pi_weight )
 {
     char *psz_token;
     struct sockaddr_in bind_addr, connect_addr;
@@ -314,6 +400,166 @@ int OpenSocket( const char *_psz_arg, int i_ttl, unsigned int *pi_weight )
             }
         }
     }
+
+    return i_fd;
+}
+
+/*****************************************************************************
+ * OpenSocket6: parse argv and open IPv6 sockets
+ *****************************************************************************/
+int OpenSocket6( const char *_psz_arg, int i_ttl, unsigned int *pi_weight )
+{
+    char *psz_token;
+    struct sockaddr_in6 bind_addr, connect_addr;
+    int i_bind_ifindex = 0, i_connect_ifindex = 0;
+    int i_fd, i;
+    char *psz_arg = strdup(_psz_arg);
+
+    bind_addr.sin6_family = connect_addr.sin6_family = AF_INET6;
+    bind_addr.sin6_addr = connect_addr.sin6_addr = in6addr_any;
+    bind_addr.sin6_port = connect_addr.sin6_port = 0;
+    bind_addr.sin6_flowinfo = connect_addr.sin6_flowinfo = 0;
+    bind_addr.sin6_scope_id = connect_addr.sin6_scope_id = 0;
+
+    psz_token = strrchr( psz_arg, ',' );
+    if ( psz_token )
+    {
+        *psz_token++ = '\0';
+        if ( pi_weight )
+            *pi_weight = strtoul( psz_token, NULL, 0 );
+    }
+    else if ( pi_weight )
+        *pi_weight = 1;
+
+    psz_token = strrchr( psz_arg, '@' );
+    if ( psz_token )
+    {
+        *psz_token++ = '\0';
+        if ( ParseHost6( &bind_addr, &i_bind_ifindex, psz_token ) < 0 )
+        {
+            free(psz_arg);
+            return -1;
+        }
+    }
+
+    if ( psz_arg[0] && ParseHost6( &connect_addr, &i_connect_ifindex, psz_arg ) < 0 )
+    {
+        free(psz_arg);
+        return -1;
+    }
+    free( psz_arg );
+
+    if ( (i_fd = socket( AF_INET6, SOCK_DGRAM, 0 )) < 0 )
+    {
+        msg_Err( NULL, "unable to open socket (%s)", strerror(errno) );
+        exit(EXIT_FAILURE);
+    }
+
+    i = 1;
+    if ( setsockopt( i_fd, SOL_SOCKET, SO_REUSEADDR, (void *)&i,
+                     sizeof(i) ) == -1 )
+    {
+        msg_Err( NULL, "unable to set socket (%s)", strerror(errno) );
+        exit(EXIT_FAILURE);
+    }
+
+    if ( i_bind_ifindex || i_connect_ifindex )
+    {
+        if ( i_bind_ifindex && i_connect_ifindex && i_bind_ifindex != i_connect_ifindex )
+        {
+            msg_Err( NULL, "conflicting interface indices" );
+            exit(EXIT_FAILURE);
+        }
+
+        if ( !i_bind_ifindex )
+            i_bind_ifindex = i_connect_ifindex;
+
+        if ( setsockopt( i_fd, IPPROTO_IPV6, IPV6_MULTICAST_IF,
+                         (void *)&i_bind_ifindex, sizeof(i_bind_ifindex) ) == -1 )
+        {
+            msg_Err( NULL, "couldn't set interface index" );
+            PrintSocket6( "socket definition:", &bind_addr, &connect_addr );
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    /* Increase the receive buffer size to 1/2MB (8Mb/s during 1/2s) to avoid
+     * packet loss caused by scheduling problems */
+    i = 0x80000;
+    setsockopt( i_fd, SOL_SOCKET, SO_RCVBUF, (void *) &i, sizeof( i ) );
+
+    if ( IN6_IS_ADDR_MULTICAST( &bind_addr.sin6_addr ) )
+    {
+        struct ipv6_mreq imr;
+        struct sockaddr_in6 bind_addr_any = bind_addr;
+        bind_addr_any.sin6_addr = in6addr_any;
+
+        if ( bind( i_fd, (struct sockaddr *)&bind_addr_any, sizeof(bind_addr_any) ) < 0 )
+        {
+            msg_Err( NULL, "couldn't bind" );
+            PrintSocket6( "socket definition:", &bind_addr, &connect_addr );
+            exit(EXIT_FAILURE);
+        }
+
+        imr.ipv6mr_multiaddr = bind_addr.sin6_addr;
+        imr.ipv6mr_interface = i_bind_ifindex;
+
+        /* Join Multicast group without source filter */
+        if ( setsockopt( i_fd, IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP,
+                         (char *)&imr, sizeof(struct ipv6_mreq) ) == -1 )
+        {
+            msg_Err( NULL, "couldn't join multicast group" );
+            PrintSocket6( "socket definition:", &bind_addr, &connect_addr );
+            exit(EXIT_FAILURE);
+        }
+    }
+    else
+    {
+        if ( bind( i_fd, (struct sockaddr *)&bind_addr, sizeof(bind_addr) ) < 0 )
+        {
+            msg_Err( NULL, "couldn't bind" );
+            PrintSocket6( "socket definition:", &bind_addr, &connect_addr );
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    if ( !IN6_IS_ADDR_UNSPECIFIED(&connect_addr.sin6_addr) )
+    {
+        if ( connect( i_fd, (struct sockaddr *)&connect_addr,
+                      sizeof(connect_addr) ) < 0 )
+        {
+            msg_Err( NULL, "cannot connect socket (%s)",
+                     strerror(errno) );
+            PrintSocket6( "socket definition:", &bind_addr, &connect_addr );
+            exit(EXIT_FAILURE);
+        }
+
+        if ( IN6_IS_ADDR_MULTICAST( &connect_addr.sin6_addr) && i_ttl )
+        {
+            if ( setsockopt( i_fd, IPPROTO_IPV6, IPV6_MULTICAST_HOPS,
+                             (void *)&i_ttl, sizeof(i_ttl) ) == -1 )
+            {
+                msg_Err( NULL, "couldn't set hop limit" );
+                PrintSocket6( "socket definition:", &bind_addr, &connect_addr );
+                exit(EXIT_FAILURE);
+            }
+        }
+    }
+
+    return i_fd;
+}
+
+/*****************************************************************************
+ * OpenSocket: parse argv and open sockets
+ *****************************************************************************/
+int OpenSocket( const char *_psz_arg, int i_ttl, unsigned int *pi_weight )
+{
+    int i_fd = 0;
+
+    i_fd = OpenSocket4( _psz_arg, i_ttl, pi_weight );
+
+    if( i_fd < 0 )
+        i_fd = OpenSocket6( _psz_arg, i_ttl, pi_weight );
 
     return i_fd;
 }
