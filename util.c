@@ -301,6 +301,10 @@ int OpenSocket4( const char *_psz_arg, int i_ttl, unsigned int *pi_weight )
     struct sockaddr_in bind_addr, connect_addr;
     int i_fd, i;
     char *psz_arg = strdup(_psz_arg);
+    char *psz_option = NULL;
+    int i_if_index = 0;
+    in_addr_t i_if_addr = INADDR_ANY;
+    int i_tos = 0;
 
     bind_addr.sin_family = connect_addr.sin_family = AF_INET;
     bind_addr.sin_addr.s_addr = connect_addr.sin_addr.s_addr = INADDR_ANY;
@@ -315,6 +319,10 @@ int OpenSocket4( const char *_psz_arg, int i_ttl, unsigned int *pi_weight )
     }
     else if ( pi_weight )
         *pi_weight = 1;
+
+    psz_option = strchr( psz_arg, '/' );
+    if ( psz_option )
+        *psz_option = '\0';
 
     psz_token = strrchr( psz_arg, '@' );
     if ( psz_token )
@@ -332,6 +340,33 @@ int OpenSocket4( const char *_psz_arg, int i_ttl, unsigned int *pi_weight )
         free(psz_arg);
         return -1;
     }
+
+    if ( psz_option )
+    {
+        do
+        {
+            *psz_option++ = '\0';
+
+#define IS_OPTION( option ) (!strncasecmp( psz_option, option, strlen(option) ))
+#define ARG_OPTION( option ) (psz_option + strlen(option))
+
+            if ( IS_OPTION("ifindex=") )
+                i_if_index = strtol( ARG_OPTION("ifindex="), NULL, 0 );
+            else if ( IS_OPTION("ifaddr=") )
+                i_if_addr = inet_addr( ARG_OPTION("ifaddr=") );
+            else if ( IS_OPTION("ttl=") )
+                i_ttl = strtol( ARG_OPTION("ttl="), NULL, 0 );
+            else if ( IS_OPTION("tos=") )
+                i_tos = strtol( ARG_OPTION("tos="), NULL, 0 );
+            else
+                msg_Warn( NULL, "unrecognized option %s", psz_option );
+
+#undef IS_OPTION
+#undef ARG_OPTION
+        }
+        while ( (psz_option = strchr( psz_option, '/' )) != NULL );
+    }
+
     free( psz_arg );
 
     if ( (i_fd = socket( AF_INET, SOCK_DGRAM, 0 )) < 0 )
@@ -363,18 +398,53 @@ int OpenSocket4( const char *_psz_arg, int i_ttl, unsigned int *pi_weight )
     /* Join the multicast group if the socket is a multicast address */
     if ( IN_MULTICAST( ntohl(bind_addr.sin_addr.s_addr)) )
     {
-        struct ip_mreq imr;
-
-        imr.imr_multiaddr.s_addr = bind_addr.sin_addr.s_addr;
-        imr.imr_interface.s_addr = INADDR_ANY; /* FIXME could be an option */
-
-        /* Join Multicast group without source filter */
-        if ( setsockopt( i_fd, IPPROTO_IP, IP_ADD_MEMBERSHIP,
-                         (char *)&imr, sizeof(struct ip_mreq) ) == -1 )
+        if ( connect_addr.sin_addr.s_addr )
         {
-            msg_Err( NULL, "couldn't join multicast group" );
-            PrintSocket( "socket definition:", &bind_addr, &connect_addr );
-            exit(EXIT_FAILURE);
+            /* Source-specific multicast */
+            struct ip_mreq_source imr;
+            imr.imr_multiaddr = bind_addr.sin_addr;
+            imr.imr_interface.s_addr = i_if_addr;
+            imr.imr_sourceaddr = connect_addr.sin_addr;
+            if ( i_if_index )
+                msg_Warn( NULL, "ignoring ifindex option in SSM" );
+
+            if ( setsockopt( i_fd, IPPROTO_IP, IP_ADD_SOURCE_MEMBERSHIP,
+                        (char *)&imr, sizeof(struct ip_mreq_source) ) < 0 )
+                msg_Warn( NULL, "couldn't join multicast group (%s)",
+                          strerror(errno) );
+                PrintSocket( "socket definition:", &bind_addr, &connect_addr );
+                exit(EXIT_FAILURE);
+        }
+        else if ( i_if_index )
+        {
+            /* Linux-specific interface-bound multicast */
+            struct ip_mreqn imr;
+            imr.imr_multiaddr = bind_addr.sin_addr;
+            imr.imr_address.s_addr = i_if_addr;
+            imr.imr_ifindex = i_if_index;
+
+            if ( setsockopt( i_fd, IPPROTO_IP, IP_ADD_MEMBERSHIP,
+                             (char *)&imr, sizeof(struct ip_mreqn) ) < 0 )
+                msg_Warn( NULL, "couldn't join multicast group (%s)",
+                          strerror(errno) );
+                PrintSocket( "socket definition:", &bind_addr, &connect_addr );
+                exit(EXIT_FAILURE);
+        }
+        else
+        {
+            /* Regular multicast */
+            struct ip_mreq imr;
+            imr.imr_multiaddr = bind_addr.sin_addr;
+            imr.imr_interface.s_addr = i_if_addr;
+
+            if ( setsockopt( i_fd, IPPROTO_IP, IP_ADD_MEMBERSHIP,
+                             (char *)&imr, sizeof(struct ip_mreq) ) == -1 )
+            {
+                msg_Err( NULL, "couldn't join multicast group (%s)",
+                         strerror(errno) );
+                PrintSocket( "socket definition:", &bind_addr, &connect_addr );
+                exit(EXIT_FAILURE);
+            }
         }
     }
 
@@ -394,7 +464,18 @@ int OpenSocket4( const char *_psz_arg, int i_ttl, unsigned int *pi_weight )
             if ( setsockopt( i_fd, IPPROTO_IP, IP_MULTICAST_TTL,
                              (void *)&i_ttl, sizeof(i_ttl) ) == -1 )
             {
-                msg_Err( NULL, "couldn't set TTL" );
+                msg_Err( NULL, "couldn't set TTL (%s)", strerror(errno) );
+                PrintSocket( "socket definition:", &bind_addr, &connect_addr );
+                exit(EXIT_FAILURE);
+            }
+        }
+
+        if ( i_tos )
+        {
+            if ( setsockopt( i_fd, IPPROTO_IP, IP_TOS,
+                             (void *)&i_tos, sizeof(i_tos) ) == -1 )
+            {
+                msg_Err( NULL, "couldn't set TOS (%s)", strerror(errno) );
                 PrintSocket( "socket definition:", &bind_addr, &connect_addr );
                 exit(EXIT_FAILURE);
             }
