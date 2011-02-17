@@ -50,7 +50,7 @@ static in_addr_t i_ssrc = 0;
 static bool b_input_udp = false, b_output_udp = false;
 static size_t i_asked_payload_size = DEFAULT_PAYLOAD_SIZE;
 
-static bool b_die = false;
+static volatile sig_atomic_t b_die = 0;
 static uint16_t i_rtp_cc;
 static uint64_t i_stc = 0; /* system time clock, used for date calculations */
 static uint64_t i_pcr = 0, i_pcr_stc = 0; /* for RTP/TS output */
@@ -80,7 +80,7 @@ static void usage(void)
  *****************************************************************************/
 static void SigHandler( int i_signal )
 {
-    b_die = true;
+    b_die = 1;
 }
 
 /*****************************************************************************
@@ -99,7 +99,7 @@ static ssize_t udp_Read( void *p_buf, size_t i_len )
     if ( (i_ret = recv( i_input_fd, p_buf, i_len, 0 )) < 0 )
     {
         msg_Err( NULL, "recv error (%s)", strerror(errno) );
-        b_die = true;
+        b_die = 1;
         return 0;
     }
 
@@ -133,10 +133,11 @@ static void stream_Skip( size_t i_len, int i_nb_chunks )
 static ssize_t stream_Read( void *p_buf, size_t i_len )
 {
     ssize_t i_ret;
+
     if ( (i_ret = read( i_input_fd, p_buf, i_len )) < 0 )
     {
         msg_Err( NULL, "read error (%s)", strerror(errno) );
-        b_die = true;
+        b_die = 1;
         return 0;
     }
 
@@ -178,20 +179,20 @@ static ssize_t file_Read( void *p_buf, size_t i_len )
     if ( (i_ret = read( i_input_fd, p_buf, i_len )) < 0 )
     {
         msg_Err( NULL, "read error (%s)", strerror(errno) );
-        b_die = true;
+        b_die = 1;
         return 0;
     }
     if ( i_ret == 0 )
     {
         msg_Dbg( NULL, "end of file reached" );
-        b_die = true;
+        b_die = 1;
         return 0;
     }
 
     if ( fread( p_aux, 8, 1, p_input_aux ) != 1 )
     {
         msg_Warn( NULL, "premature end of aux file reached" );
-        b_die = true;
+        b_die = 1;
         return 0;
     }
     i_stc = ((uint64_t)p_aux[0] << 56)
@@ -278,7 +279,10 @@ int main( int i_argc, char **pp_argv )
     uint8_t *p_buffer, *p_read_buffer;
     size_t i_max_read_size, i_max_write_size;
     int c;
+    struct sigaction sa;
+    sigset_t set;
 
+    /* Parse options */
     while ( (c = getopt( i_argc, pp_argv, "i:t:p:s:n:d:aS:uUm:h" )) != -1 )
     {
         switch ( c )
@@ -342,6 +346,7 @@ int main( int i_argc, char **pp_argv )
     if ( optind >= i_argc - 1 )
         usage();
 
+    /* Open sockets */
     if ( (i_input_fd = OpenSocket( pp_argv[optind], i_ttl, NULL )) >= 0 )
     {
         pf_Read = udp_Read;
@@ -400,6 +405,7 @@ int main( int i_argc, char **pp_argv )
     if ( i_skip_chunks )
         pf_Skip( i_asked_payload_size, i_skip_chunks );
 
+    /* Real-time priority */
     if ( i_priority > 0 )
     {
         struct sched_param param;
@@ -415,10 +421,20 @@ int main( int i_argc, char **pp_argv )
         }
     }
 
-    signal( SIGTERM, SigHandler );
-    signal( SIGHUP, SigHandler );
-    signal( SIGINT, SigHandler );
+    /* Set signal handlers */
+    memset( &sa, 0, sizeof(struct sigaction) );
+    sa.sa_handler = SigHandler;
+    sigfillset( &set );
 
+    if ( sigaction( SIGTERM, &sa, NULL ) == -1 ||
+         sigaction( SIGHUP, &sa, NULL ) == -1 ||
+         sigaction( SIGINT, &sa, NULL ) == -1 )
+    {
+        msg_Err( NULL, "couldn't set signal handler: %s", strerror(errno) );
+        exit(EXIT_FAILURE);
+    }
+
+    /* Main loop */
     while ( !b_die )
     {
         ssize_t i_read_size = pf_Read( p_read_buffer, i_max_read_size );
@@ -504,14 +520,14 @@ int main( int i_argc, char **pp_argv )
         if ( i_nb_chunks > 0 )
             i_nb_chunks--;
         if ( !i_nb_chunks )
-            b_die = true;
+            b_die = 1;
 
         if ( i_duration )
         {
             if ( i_last_stc )
             {
                 if ( i_last_stc <= i_stc )
-                    b_die = true;
+                    b_die = 1;
             }
             else
                 i_last_stc = i_stc + i_duration;
