@@ -305,6 +305,7 @@ int OpenSocket4( const char *_psz_arg, int i_ttl, unsigned int *pi_weight )
     int i_if_index = 0;
     in_addr_t i_if_addr = INADDR_ANY;
     int i_tos = 0;
+    bool b_valid = false;
 
     bind_addr.sin_family = connect_addr.sin_family = AF_INET;
     bind_addr.sin_addr.s_addr = connect_addr.sin_addr.s_addr = INADDR_ANY;
@@ -333,9 +334,19 @@ int OpenSocket4( const char *_psz_arg, int i_ttl, unsigned int *pi_weight )
             free(psz_arg);
             return -1;
         }
+        b_valid = true;
     }
 
-    if ( psz_arg[0] && ParseHost( &connect_addr, psz_arg ) < 0 )
+    if ( psz_arg[0] )
+    {
+        b_valid = true;
+        if ( ParseHost( &connect_addr, psz_arg ) < 0 )
+        {
+            free(psz_arg);
+            return -1;
+        }
+    }
+    if ( !b_valid )
     {
         free(psz_arg);
         return -1;
