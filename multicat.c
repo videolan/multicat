@@ -395,7 +395,7 @@ int main( int i_argc, char **pp_argv )
     i_max_write_size = i_asked_payload_size + (b_output_udp ? 0 :
                                         (b_input_udp ? RTP_HEADER_SIZE :
                                          RTP_HEADER_MAX_SIZE));
-    p_buffer = malloc( (i_max_read_size < i_max_write_size) ? i_max_read_size :
+    p_buffer = malloc( (i_max_read_size > i_max_write_size) ? i_max_read_size :
                        i_max_write_size );
     p_read_buffer = p_buffer + ((b_input_udp && !b_output_udp) ?
                                 RTP_HEADER_SIZE : 0);
