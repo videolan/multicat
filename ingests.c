@@ -23,6 +23,8 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -180,9 +182,9 @@ static void TSHandle( uint8_t *p_ts )
  *****************************************************************************/
 int main( int i_argc, char **pp_argv )
 {
-    bool b_stream;
     uint8_t *p_buffer;
-    unsigned int i_payload_size;
+    unsigned int i_payload_size = DEFAULT_PAYLOAD_SIZE;
+    mode_t i_mode;
 
     for ( ; ; )
     {
@@ -216,10 +218,14 @@ int main( int i_argc, char **pp_argv )
     if ( optind >= i_argc || !i_pcr_pid )
         usage();
 
-    i_fd = OpenFile( pp_argv[optind], true, false, &b_stream );
-    if ( b_stream )
+    i_mode = StatFile( pp_argv[optind] );
+    if ( S_ISCHR( i_mode ) || S_ISFIFO( i_mode ) || S_ISDIR( i_mode ) )
         usage();
-    p_output_aux = OpenAuxFile( pp_argv[optind], false, false );
+    i_fd = OpenFile( pp_argv[optind], true, false );
+
+    char *psz_aux_file = GetAuxFile( pp_argv[optind], i_payload_size );
+    p_output_aux = OpenAuxFile( psz_aux_file, false, false );
+    free( psz_aux_file );
 
     p_buffer = malloc( TS_SIZE * READ_ONCE );
 

@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <inttypes.h>
 #include <string.h>
 #include <errno.h>
 #include <stdarg.h>
@@ -39,6 +40,7 @@
 #include <sys/ioctl.h>
 #include <net/if.h>
 #include <unistd.h>
+#include <sys/mman.h>
 
 #include "util.h"
 
@@ -47,6 +49,7 @@
  *****************************************************************************/
 #define MAX_MSG 1024
 #define PSZ_AUX_EXT "aux"
+#define PSZ_TS_EXT "ts"
 
 int i_verbose = VERB_DBG;
 
@@ -125,15 +128,15 @@ void msg_Raw( void *_unused, const char *psz_format, ... )
 }
 
 /*****************************************************************************
- * wall_Date: returns a 27 MHz timestamp
+ * wall_Date/real_Date: returns a 27 MHz timestamp
  *****************************************************************************/
-uint64_t wall_Date( void )
+static uint64_t _wall_Date( bool b_realtime )
 {
 #if defined (HAVE_CLOCK_NANOSLEEP)
     struct timespec ts;
 
     /* Try to use POSIX monotonic clock if available */
-    if( clock_gettime( CLOCK_MONOTONIC, &ts ) == EINVAL )
+    if( b_realtime || clock_gettime( CLOCK_MONOTONIC, &ts ) == EINVAL )
         /* Run-time fallback to real-time clock (always available) */
         (void)clock_gettime( CLOCK_REALTIME, &ts );
 
@@ -150,10 +153,20 @@ uint64_t wall_Date( void )
 #endif
 }
 
+uint64_t wall_Date( void )
+{
+    return _wall_Date( false );
+}
+
+uint64_t real_Date( void )
+{
+    return _wall_Date( true );
+}
+
 /*****************************************************************************
- * wall_Sleep
+ * wall_Sleep/real_Sleep
  *****************************************************************************/
-void wall_Sleep( uint64_t i_delay )
+static void _wall_Sleep( uint64_t i_delay, bool b_realtime )
 {
     struct timespec ts;
     ts.tv_sec = i_delay / 27000000;
@@ -161,8 +174,8 @@ void wall_Sleep( uint64_t i_delay )
 
 #if defined( HAVE_CLOCK_NANOSLEEP )
     int val;
-    while ( ( val = clock_nanosleep( CLOCK_MONOTONIC, 0, &ts, &ts ) ) == EINTR );
-    if( val == EINVAL )
+    while ( !b_realtime || ( val = clock_nanosleep( CLOCK_MONOTONIC, 0, &ts, &ts ) ) == EINTR );
+    if( !b_realtime || val == EINVAL )
     {
         ts.tv_sec = i_delay / 27000000;
         ts.tv_nsec = (i_delay % 27000000) * 1000 / 27;
@@ -171,6 +184,16 @@ void wall_Sleep( uint64_t i_delay )
 #else
     while ( nanosleep( &ts, &ts ) && errno == EINTR );
 #endif
+}
+
+void wall_Sleep( uint64_t i_delay )
+{
+    _wall_Sleep( i_delay, false );
+}
+
+void real_Sleep( uint64_t i_delay )
+{
+    _wall_Sleep( i_delay, true );
 }
 
 /*****************************************************************************
@@ -657,9 +680,20 @@ int OpenSocket( const char *_psz_arg, int i_ttl, unsigned int *pi_weight )
 }
 
 /*****************************************************************************
+ * StatFile: parse argv and return the mode of the named file
+ *****************************************************************************/
+mode_t StatFile( const char *psz_arg )
+{
+    struct stat sb;
+    if ( stat( psz_arg, &sb ) < 0 )
+        return 0;
+    return sb.st_mode;
+}
+
+/*****************************************************************************
  * OpenFile: parse argv and open file descriptors
  *****************************************************************************/
-int OpenFile( const char *psz_arg, bool b_read, bool b_append, bool *pb_stream )
+int OpenFile( const char *psz_arg, bool b_read, bool b_append )
 {
     struct stat sb;
     int i_fd;
@@ -673,23 +707,14 @@ int OpenFile( const char *psz_arg, bool b_read, bool b_append, bool *pb_stream )
                      strerror(errno) );
             exit(EXIT_FAILURE);
         }
-        *pb_stream = false;
         i_mode |= O_CREAT;
     }
-    else if ( S_ISCHR(sb.st_mode) || S_ISFIFO(sb.st_mode) )
+    else if ( !(S_ISCHR(sb.st_mode) || S_ISFIFO(sb.st_mode)) && !b_read )
     {
-        *pb_stream = true;
-    }
-    else
-    {
-        *pb_stream = false;
-        if ( !b_read )
-        {
-            if ( b_append )
-                i_mode |= O_APPEND;
-            else
-                i_mode |= O_TRUNC;
-        }
+        if ( b_append )
+            i_mode |= O_APPEND;
+        else
+            i_mode |= O_TRUNC;
     }
 
     if ( (i_fd = open( psz_arg, i_mode, 0644 )) < 0 )
@@ -702,26 +727,170 @@ int OpenFile( const char *psz_arg, bool b_read, bool b_append, bool *pb_stream )
 }
 
 /*****************************************************************************
+ * GetAuxFile: generate a file name for the TS file
+ * Remember to free the returned string
+ *****************************************************************************/
+char *GetAuxFile( const char *psz_arg, size_t i_payload_size )
+{
+    char *psz_aux = malloc( strlen(psz_arg) + 256 );
+    char *psz_token;
+
+    strcpy( psz_aux, psz_arg );
+
+    /* Skip first character of base name */
+    psz_token = strrchr( psz_aux, '/' );
+    if ( psz_token != NULL )
+        psz_token++;
+    else
+        psz_token = psz_aux + 1;
+
+    /* Strip extension */
+    psz_token = strrchr( psz_aux, '.' );
+    if ( psz_token ) *psz_token = '\0';
+
+    /* Append extension */
+    strcat( psz_aux, "." PSZ_AUX_EXT );
+    if ( i_payload_size != DEFAULT_PAYLOAD_SIZE )
+        sprintf( psz_aux + strlen(psz_aux), "%zu", i_payload_size );
+
+    return psz_aux;
+}
+
+/*****************************************************************************
  * OpenAuxFile
  *****************************************************************************/
 FILE *OpenAuxFile( const char *psz_arg, bool b_read, bool b_append )
 {
-    char psz_aux[strlen(psz_arg) + strlen(PSZ_AUX_EXT) + 2];
-    char *psz_token;
     FILE *p_aux;
 
-    strcpy( psz_aux, psz_arg );
-    psz_token = strrchr( psz_aux, '.' );
-    if ( psz_token ) *psz_token = '\0';
-    strcat( psz_aux, "." PSZ_AUX_EXT );
-
-    if ( (p_aux = fopen( psz_aux,
-                           b_read ? "rb" : (b_append ? "ab" : "wb") )) < 0 )
+    if ( (p_aux = fopen( psz_arg,
+                         b_read ? "rb" : (b_append ? "ab" : "wb") )) < 0 )
     {
-        msg_Err( NULL, "couldn't open file %s (%s)", psz_aux,
+        msg_Err( NULL, "couldn't open file %s (%s)", psz_arg,
                  strerror(errno) );
         exit(EXIT_FAILURE);
     }
 
     return p_aux;
+}
+
+
+/*****************************************************************************
+ * LookupAuxFile: find an STC in an auxiliary file
+ *****************************************************************************/
+off_t LookupAuxFile( const char *psz_arg, int64_t i_wanted, bool b_absolute )
+{
+    uint8_t *p_aux;
+    off_t i_offset1 = 0, i_offset2;
+    int i_stc_fd;
+    struct stat stc_stat;
+
+    if ( (i_stc_fd = open( psz_arg, O_RDONLY )) == -1 )
+    {
+        msg_Err( NULL, "unable to open %s (%s)", psz_arg, strerror(errno) );
+        return -1;
+    }
+
+    if ( fstat( i_stc_fd, &stc_stat ) == -1
+          || stc_stat.st_size < sizeof(uint64_t) )
+    {
+        msg_Err( NULL, "unable to stat %s (%s)", psz_arg, strerror(errno) );
+        return -1;
+    }
+
+    p_aux = mmap( NULL, stc_stat.st_size, PROT_READ, MAP_SHARED,
+                  i_stc_fd, 0 );
+    if ( p_aux == MAP_FAILED )
+    {
+        msg_Err( NULL, "unable to mmap %s (%s)", psz_arg, strerror(errno) );
+        return -1;
+    }
+
+    i_offset2 = stc_stat.st_size / sizeof(uint64_t);
+
+    if ( i_wanted < 0 )
+        i_wanted += FromSTC( p_aux + (i_offset2 - 1) * sizeof(uint64_t) );
+    else if ( !b_absolute )
+        i_wanted += FromSTC( p_aux );
+
+    if ( i_wanted < 0 )
+    {
+        msg_Err( NULL, "invalid offset" );
+        return -1;
+    }
+
+    for ( ; ; )
+    {
+        off_t i_mid_offset = (i_offset1 + i_offset2) / 2;
+        uint8_t *p_mid_aux = p_aux + i_mid_offset * sizeof(uint64_t);
+        uint64_t i_mid_stc = FromSTC( p_mid_aux );
+
+        if ( i_offset1 == i_mid_offset )
+            break;
+
+        if ( i_mid_stc >= i_wanted )
+            i_offset2 = i_mid_offset;
+        else
+            i_offset1 = i_mid_offset;
+    }
+
+    munmap( p_aux, stc_stat.st_size );
+    close( i_stc_fd );
+
+    return i_offset2;
+}
+
+/*****************************************************************************
+ * GetDirFile: return the prefix of the file according to the STC
+ *****************************************************************************/
+uint64_t GetDirFile( uint64_t i_rotate_size, int64_t i_wanted )
+{
+    if ( i_wanted <= 0 )
+        i_wanted += real_Date();
+    if ( i_wanted <= 0 )
+        return 0;
+
+    return i_wanted / i_rotate_size;
+}
+
+/*****************************************************************************
+ * OpenDirFile: return fd + aux file pointer
+ *****************************************************************************/
+int OpenDirFile( const char *psz_dir_path, uint64_t i_file, bool b_read,
+                 size_t i_payload_size, FILE **pp_aux_file )
+{
+    int i_fd;
+    char psz_file[strlen(psz_dir_path) + sizeof(PSZ_TS_EXT) +
+                  sizeof(".18446744073709551615")];
+    sprintf( psz_file, "%s/%"PRIu64"."PSZ_TS_EXT, psz_dir_path, i_file );
+
+    i_fd = OpenFile( psz_file, b_read, !b_read );
+    if ( i_fd < 0 ) return -1;
+
+    char *psz_aux_file = GetAuxFile( psz_file, i_payload_size );
+    *pp_aux_file = OpenAuxFile( psz_aux_file, b_read, !b_read );
+    free( psz_aux_file );
+    if ( *pp_aux_file == NULL )
+    {
+        close( i_fd );
+        return -1;
+    }
+    return i_fd;
+}
+
+/*****************************************************************************
+ * LookupDirAuxFile: find an STC in an auxiliary file of a directory
+ *****************************************************************************/
+off_t LookupDirAuxFile( const char *psz_dir_path, uint64_t i_file,
+                        int64_t i_wanted, size_t i_payload_size )
+{
+    off_t i_ret;
+    char psz_file[strlen(psz_dir_path) + sizeof(PSZ_TS_EXT) +
+                  sizeof(".18446744073709551615")];
+    sprintf( psz_file, "%s/%"PRIu64"."PSZ_TS_EXT, psz_dir_path, i_file );
+
+    char *psz_aux_file = GetAuxFile( psz_file, i_payload_size );
+    i_ret = LookupAuxFile( psz_aux_file, i_wanted, true );
+    free( psz_aux_file );
+    return i_ret;
 }

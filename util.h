@@ -25,6 +25,7 @@
 
 #define DEFAULT_PORT 1234
 #define DEFAULT_PAYLOAD_SIZE 1316
+#define DEFAULT_ROTATE_SIZE UINT64_C(97200000000)
 #define TS_SIZE 188
 #define RTP_HEADER_SIZE 12
 
@@ -42,10 +43,46 @@ void msg_Dbg( void *_unused, const char *psz_format, ... );
 void msg_Raw( void *_unused, const char *psz_format, ... );
 uint64_t wall_Date( void );
 void wall_Sleep( uint64_t i_delay );
+uint64_t real_Date( void );
+void real_Sleep( uint64_t i_delay );
 int OpenSocket( const char *_psz_arg, int i_ttl, unsigned int *pi_weight );
-int OpenFile( const char *psz_arg, bool b_read, bool b_append,
-              bool *pb_stream );
+mode_t StatFile(const char *psz_arg);
+int OpenFile( const char *psz_arg, bool b_read, bool b_append );
+char *GetAuxFile( const char *psz_arg, size_t i_payload_size );
 FILE *OpenAuxFile( const char *psz_arg, bool b_read, bool b_append );
+off_t LookupAuxFile( const char *psz_arg, int64_t i_wanted, bool b_absolute );
+uint64_t GetDirFile( uint64_t i_rotate_size, int64_t i_wanted );
+int OpenDirFile( const char *psz_dir_path, uint64_t i_file, bool b_read,
+                 size_t i_payload_size, FILE **pp_aux_file );
+off_t LookupDirAuxFile( const char *psz_dir_path, uint64_t i_file,
+                        int64_t i_wanted, size_t i_payload_size );
+
+/*****************************************************************************
+ * Aux files helpers
+ *****************************************************************************/
+static inline uint64_t FromSTC( const uint8_t *p_aux )
+{
+    return ((uint64_t)p_aux[0] << 56)
+         | ((uint64_t)p_aux[1] << 48)
+         | ((uint64_t)p_aux[2] << 40)
+         | ((uint64_t)p_aux[3] << 32)
+         | ((uint64_t)p_aux[4] << 24)
+         | ((uint64_t)p_aux[5] << 16)
+         | ((uint64_t)p_aux[6] << 8)
+         | ((uint64_t)p_aux[7] << 0);
+}
+
+static inline void ToSTC( uint8_t *p_aux, uint64_t i_stc )
+{
+    p_aux[0] = i_stc >> 56;
+    p_aux[1] = (i_stc >> 48) & 0xff;
+    p_aux[2] = (i_stc >> 40) & 0xff;
+    p_aux[3] = (i_stc >> 32) & 0xff;
+    p_aux[4] = (i_stc >> 24) & 0xff;
+    p_aux[5] = (i_stc >> 16) & 0xff;
+    p_aux[6] = (i_stc >> 8) & 0xff;
+    p_aux[7] = (i_stc >> 0) & 0xff;
+}
 
 /*****************************************************************************
  * Miscellaneous RTP handlers
@@ -86,7 +123,7 @@ static inline uint8_t *rtp_GetPayload( uint8_t *p_hdr )
     unsigned int i_size = RTP_HEADER_SIZE;
     i_size += 4 * (p_hdr[0] & 0xf);
     if ( p_hdr[0] & 0x10 ) /* header extension */
-        i_size += 4 + (p_hdr[i_size + 2] << 8) + p_hdr[i_size + 3];
+        i_size += 4 * (1 + (p_hdr[i_size + 2] << 8) + p_hdr[i_size + 3]);
     return p_hdr + i_size;
 }
 

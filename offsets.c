@@ -28,101 +28,39 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <string.h>
 #include <errno.h>
-#include <sys/mman.h>
+
+#include "util.h"
 
 /*****************************************************************************
  * Entry point
  *****************************************************************************/
 int main( int i_argc, char **pp_argv )
 {
-    uint8_t *p_aux;
-    uint64_t i_wanted;
-    off_t i_offset1 = 0, i_offset2;
-    int i_stc_fd;
-    struct stat stc_stat;
-    uint64_t i_stc0;
+    int64_t i_wanted;
+    off_t i_ret;
 
     if ( i_argc != 3 )
     {
-        fprintf( stderr, "Usage: offsets <aux file> <27 MHz timestamp>\n" );
+        msg_Err( NULL, "Usage: offsets <aux file> <27 MHz timestamp>" );
+        msg_Err( NULL, "[offsets is deprecated, see multicat instead]" );
         exit(EXIT_FAILURE);
     }
 
-    i_wanted = strtoull( pp_argv[2], NULL, 0 );
+    i_wanted = strtoll( pp_argv[2], NULL, 0 );
     if ( !i_wanted )
     {
         printf( "0\n" );
         exit(EXIT_SUCCESS);
     }
 
-    if ( (i_stc_fd = open( pp_argv[1], O_RDONLY )) == -1 )
-    {
-        fprintf( stderr, "unable to open %s (%s)\n", pp_argv[1],
-                 strerror(errno) );
+    i_ret = LookupAuxFile( pp_argv[1], i_wanted, false );
+    if ( i_ret == -1 )
         exit(EXIT_FAILURE);
-    }
 
-    if ( fstat( i_stc_fd, &stc_stat ) == -1 )
-    {
-        fprintf( stderr, "unable to stat %s (%s)\n", pp_argv[1],
-                 strerror(errno) );
-        exit(EXIT_FAILURE);
-    }
-
-    p_aux = mmap( NULL, stc_stat.st_size, PROT_READ, MAP_SHARED,
-                  i_stc_fd, 0 );
-    if ( p_aux == MAP_FAILED )
-    {
-        fprintf( stderr, "unable to mmap %s (%s)\n", pp_argv[1],
-                 strerror(errno) );
-        exit(EXIT_FAILURE);
-    }
-
-    if ( p_aux[0] == 0x47 && p_aux[188] == 0x47 && p_aux[376] == 0x47 )
-    {
-        fprintf( stderr, "this is a TS file, not an aux file\n" );
-        exit(EXIT_FAILURE);
-    }
-
-    i_offset2 = stc_stat.st_size / sizeof(uint64_t);
-    i_stc0 = ((uint64_t)p_aux[0] << 56)
-              | ((uint64_t)p_aux[1] << 48)
-              | ((uint64_t)p_aux[2] << 40)
-              | ((uint64_t)p_aux[3] << 32)
-              | ((uint64_t)p_aux[4] << 24)
-              | ((uint64_t)p_aux[5] << 16)
-              | ((uint64_t)p_aux[6] << 8)
-              | ((uint64_t)p_aux[7] << 0);
-
-    for ( ; ; )
-    {
-        off_t i_mid_offset = (i_offset1 + i_offset2) / 2;
-        uint8_t *p_mid_aux = p_aux + i_mid_offset * sizeof(uint64_t);
-        uint64_t i_mid_stc = ((uint64_t)p_mid_aux[0] << 56)
-                              | ((uint64_t)p_mid_aux[1] << 48)
-                              | ((uint64_t)p_mid_aux[2] << 40)
-                              | ((uint64_t)p_mid_aux[3] << 32)
-                              | ((uint64_t)p_mid_aux[4] << 24)
-                              | ((uint64_t)p_mid_aux[5] << 16)
-                              | ((uint64_t)p_mid_aux[6] << 8)
-                              | ((uint64_t)p_mid_aux[7] << 0);
-
-
-        if ( i_offset1 == i_mid_offset )
-            break;
-
-        if ( i_mid_stc - i_stc0 >= i_wanted )
-            i_offset2 = i_mid_offset;
-        else
-            i_offset1 = i_mid_offset;
-    }
-
-    munmap( p_aux, stc_stat.st_size );
-    close( i_stc_fd );
-
-    printf( "%jd\n", (intmax_t)i_offset2 );
+    printf( "%jd\n", (intmax_t)i_ret );
 
     exit(EXIT_SUCCESS);
 }

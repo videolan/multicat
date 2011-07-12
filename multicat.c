@@ -23,9 +23,12 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <inttypes.h>
 #include <string.h>
 #include <errno.h>
 #include <signal.h>
@@ -33,9 +36,11 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <pthread.h>
+#include <poll.h>
 
 #include "util.h"
 
+#define POLL_TIMEOUT 1000 /* 1 s */
 #define RTP_HEADER_MAX_SIZE (RTP_HEADER_SIZE + 15 * 4)
 #define RTP_TS_TYPE 33
 
@@ -44,30 +49,41 @@
  *****************************************************************************/
 static int i_input_fd, i_output_fd;
 FILE *p_input_aux, *p_output_aux;
+static int i_ttl = 0;
+static bool b_sleep = true;
 static uint16_t i_pcr_pid = 0;
 static bool b_overwrite_ssrc = false;
 static in_addr_t i_ssrc = 0;
 static bool b_input_udp = false, b_output_udp = false;
 static size_t i_asked_payload_size = DEFAULT_PAYLOAD_SIZE;
+static uint64_t i_rotate_size = DEFAULT_ROTATE_SIZE;
 
 static volatile sig_atomic_t b_die = 0;
 static uint16_t i_rtp_cc;
 static uint64_t i_stc = 0; /* system time clock, used for date calculations */
+static uint64_t i_first_stc = 0;
 static uint64_t i_pcr = 0, i_pcr_stc = 0; /* for RTP/TS output */
-void (*pf_Skip)( size_t i_len, int i_nb_chunks );
+uint64_t (*pf_Date)(void) = wall_Date;
+void (*pf_Sleep)( uint64_t ) = wall_Sleep;
 ssize_t (*pf_Read)( void *p_buf, size_t i_len );
+void (*pf_Delay)(void) = NULL;
+void (*pf_ExitRead)(void);
 ssize_t (*pf_Write)( const void *p_buf, size_t i_len );
+void (*pf_ExitWrite)(void);
 
 static void usage(void)
 {
-    msg_Raw( NULL, "Usage: multicat [-i <RT priority>] [-t <ttl>] [-p <PCR PID>] [-s <chunks>] [-n <chunks>] [-d <time>] [-a] [-S <SSRC IP>] [-u] [-U] [-m <payload size>] <input item> <output item>" );
-    msg_Raw( NULL, "    item format: <file path | device path | FIFO path | network host>" );
+    msg_Raw( NULL, "Usage: multicat [-i <RT priority>] [-t <ttl>] [-f] [-p <PCR PID>] [-s <chunks>] [-n <chunks>] [-k <start time>] [-d <duration>] [-a] [-r <file duration>] [-S <SSRC IP>] [-u] [-U] [-m <payload size>] <input item> <output item>" );
+    msg_Raw( NULL, "    item format: <file path | device path | FIFO path | directory path | network host>" );
     msg_Raw( NULL, "    host format: [<connect addr>[:<connect port>]][@[<bind addr][:<bind port>]]" );
+    msg_Raw( NULL, "    -f: output packets as fast as possible" );
     msg_Raw( NULL, "    -p: overwrite or create RTP timestamps using PCR PID (MPEG-2/TS)" );
-    msg_Raw( NULL, "    -s: skip the first N chunks of payload" );
-    msg_Raw( NULL, "    -n: exit after playing N chunks of payload" );
+    msg_Raw( NULL, "    -s: skip the first N chunks of payload [deprecated]" );
+    msg_Raw( NULL, "    -n: exit after playing N chunks of payload [deprecated]" );
+    msg_Raw( NULL, "    -k: start at the given position (in 27 MHz units, negative = from the end)" );
     msg_Raw( NULL, "    -d: exit after definite time (in 27 MHz units)" );
     msg_Raw( NULL, "    -a: append to existing destination file (risky)" );
+    msg_Raw( NULL, "    -r: in directory mode, rotate file after this duration (default: 97200000000 ticks = 1 hour" );
     msg_Raw( NULL, "    -S: overwrite or create RTP SSRC" );
     msg_Raw( NULL, "    -u: source has no RTP header" );
     msg_Raw( NULL, "    -U: destination has no RTP header" );
@@ -84,18 +100,45 @@ static void SigHandler( int i_signal )
 }
 
 /*****************************************************************************
+ * Poll: factorize polling code
+ *****************************************************************************/
+static bool Poll(void)
+{
+    struct pollfd pfd;
+    int i_ret;
+
+    pfd.fd = i_input_fd;
+    pfd.events = POLLIN;
+
+    i_ret = poll( &pfd, 1, POLL_TIMEOUT );
+    if ( i_ret < 0 )
+    {
+        msg_Err( NULL, "poll error (%s)", strerror(errno) );
+        b_die = 1;
+        return false;
+    }
+    if ( !i_ret ) return false;
+
+    return true;
+}
+
+/*****************************************************************************
  * udp_*: UDP socket handlers
  *****************************************************************************/
-static int i_udp_nb_skips = 0;
-
-static void udp_Skip( size_t i_len, int i_nb_chunks )
-{
-    i_udp_nb_skips = i_nb_chunks;
-}
+static off_t i_udp_nb_skips = 0;
 
 static ssize_t udp_Read( void *p_buf, size_t i_len )
 {
     ssize_t i_ret;
+    if ( !i_udp_nb_skips && !i_first_stc )
+        i_first_stc = pf_Date();
+
+    if ( !Poll() )
+    {
+        i_stc = pf_Date();
+        return 0;
+    }
+
     if ( (i_ret = recv( i_input_fd, p_buf, i_len, 0 )) < 0 )
     {
         msg_Err( NULL, "recv error (%s)", strerror(errno) );
@@ -103,7 +146,7 @@ static ssize_t udp_Read( void *p_buf, size_t i_len )
         return 0;
     }
 
-    i_stc = wall_Date();
+    i_stc = pf_Date();
     if ( i_udp_nb_skips )
     {
         i_udp_nb_skips--;
@@ -112,27 +155,65 @@ static ssize_t udp_Read( void *p_buf, size_t i_len )
     return i_ret;
 }
 
+static void udp_ExitRead(void)
+{
+    close( i_input_fd );
+}
+
+static int udp_InitRead( const char *psz_arg, size_t i_len,
+                         off_t i_nb_skipped_chunks, int64_t i_pos )
+{
+    if ( i_pos || (i_input_fd = OpenSocket( psz_arg, i_ttl, NULL )) < 0 )
+        return -1;
+
+    i_udp_nb_skips = i_nb_skipped_chunks;
+
+    pf_Read = udp_Read;
+    pf_ExitRead = udp_ExitRead;
+    return 0;
+}
+
 static ssize_t udp_Write( const void *p_buf, size_t i_len )
 {
     size_t i_ret;
     if ( (i_ret = send( i_output_fd, p_buf, i_len, 0 )) < 0 )
-        msg_Err( NULL, "write error (%s)", strerror(errno) );
+        msg_Warn( NULL, "write error (%s)", strerror(errno) );
+        /* do not set b_die to true because these errors can be transient */
+
     return i_ret;
+}
+
+static void udp_ExitWrite(void)
+{
+    close( i_output_fd );
+}
+
+static int udp_InitWrite( const char *psz_arg, size_t i_len, bool b_append )
+{
+    if ( (i_output_fd = OpenSocket( psz_arg, i_ttl, NULL )) < 0 )
+        return -1;
+
+    pf_Write = udp_Write;
+    pf_ExitWrite = udp_ExitWrite;
+    return 0;
 }
 
 /*****************************************************************************
  * stream_*: FIFO and character device handlers
  *****************************************************************************/
-static int i_stream_nb_skips = 0;
-
-static void stream_Skip( size_t i_len, int i_nb_chunks )
-{
-    i_stream_nb_skips = i_nb_chunks;
-}
+static off_t i_stream_nb_skips = 0;
 
 static ssize_t stream_Read( void *p_buf, size_t i_len )
 {
     ssize_t i_ret;
+    if ( !i_stream_nb_skips && !i_first_stc )
+        i_first_stc = pf_Date();
+
+    if ( !Poll() )
+    {
+        i_stc = pf_Date();
+        return 0;
+    }
 
     if ( (i_ret = read( i_input_fd, p_buf, i_len )) < 0 )
     {
@@ -141,7 +222,7 @@ static ssize_t stream_Read( void *p_buf, size_t i_len )
         return 0;
     }
 
-    i_stc = wall_Date();
+    i_stc = pf_Date();
     if ( i_stream_nb_skips )
     {
         i_stream_nb_skips--;
@@ -150,30 +231,55 @@ static ssize_t stream_Read( void *p_buf, size_t i_len )
     return i_ret;
 }
 
+static void stream_ExitRead(void)
+{
+    close( i_input_fd );
+}
+
+static int stream_InitRead( const char *psz_arg, size_t i_len,
+                            off_t i_nb_skipped_chunks, int64_t i_pos )
+{
+    if ( i_pos ) return -1;
+
+    i_input_fd = OpenFile( psz_arg, true, false );
+    i_stream_nb_skips = i_nb_skipped_chunks;
+
+    pf_Read = stream_Read;
+    pf_ExitRead = stream_ExitRead;
+    return 0;
+}
+
 static ssize_t stream_Write( const void *p_buf, size_t i_len )
 {
     size_t i_ret;
     if ( (i_ret = write( i_output_fd, p_buf, i_len )) < 0 )
+    {
         msg_Err( NULL, "write error (%s)", strerror(errno) );
+        b_die = 1;
+    }
     return i_ret;
+}
+
+static void stream_ExitWrite(void)
+{
+    close( i_output_fd );
+}
+
+static int stream_InitWrite( const char *psz_arg, size_t i_len, bool b_append )
+{
+    i_output_fd = OpenFile( psz_arg, false, b_append );
+
+    pf_Write = stream_Write;
+    pf_ExitWrite = stream_ExitWrite;
+    return 0;
 }
 
 /*****************************************************************************
  * file_*: handler for the auxiliary file format
  *****************************************************************************/
-static void file_Skip( size_t i_len, int i_nb_chunks )
-{
-    lseek( i_input_fd, (off_t)i_len * (off_t)i_nb_chunks, SEEK_SET );
-    fseeko( p_input_aux, 8 * (off_t)i_nb_chunks, SEEK_SET );
-}
-
 static ssize_t file_Read( void *p_buf, size_t i_len )
 {
-    /* for correct throughput without rounding approximations */
-    static uint64_t i_file_first_stc = 0, i_file_first_wall = 0;
-
     uint8_t p_aux[8];
-    uint64_t i_wall;
     ssize_t i_ret;
 
     if ( (i_ret = read( i_input_fd, p_buf, i_len )) < 0 )
@@ -195,25 +301,58 @@ static ssize_t file_Read( void *p_buf, size_t i_len )
         b_die = 1;
         return 0;
     }
-    i_stc = ((uint64_t)p_aux[0] << 56)
-            | ((uint64_t)p_aux[1] << 48)
-            | ((uint64_t)p_aux[2] << 40)
-            | ((uint64_t)p_aux[3] << 32)
-            | ((uint64_t)p_aux[4] << 24)
-            | ((uint64_t)p_aux[5] << 16)
-            | ((uint64_t)p_aux[6] << 8)
-            | ((uint64_t)p_aux[7] << 0);
-    i_wall = wall_Date();
+    i_stc = FromSTC( p_aux );
+    if ( !i_first_stc ) i_first_stc = i_stc;
+
+    return i_ret;
+}
+
+static void file_Delay(void)
+{
+    /* for correct throughput without rounding approximations */
+    static uint64_t i_file_first_stc = 0, i_file_first_wall = 0;
+    uint64_t i_wall = pf_Date();
 
     if ( !i_file_first_wall )
     {
         i_file_first_wall = i_wall;
         i_file_first_stc = i_stc;
     }
+    else if ( (i_stc - i_file_first_stc) > (i_wall - i_file_first_wall) )
+        pf_Sleep( (i_stc - i_file_first_stc) - (i_wall - i_file_first_wall) );
+}
 
-    if ( (i_stc - i_file_first_stc) > (i_wall - i_file_first_wall) )
-        wall_Sleep( (i_stc - i_file_first_stc) - (i_wall - i_file_first_wall) );
-    return i_ret;
+static void file_ExitRead(void)
+{
+    close( i_input_fd );
+    fclose( p_input_aux );
+}
+
+static int file_InitRead( const char *psz_arg, size_t i_len,
+                          off_t i_nb_skipped_chunks, int64_t i_pos )
+{
+    char *psz_aux_file = GetAuxFile( psz_arg, i_len );
+    if ( i_pos )
+    {
+        i_nb_skipped_chunks = LookupAuxFile( psz_aux_file, i_pos, false );
+        if ( i_nb_skipped_chunks < 0 )
+        {
+            free( psz_aux_file );
+            return -1;
+        }
+    }
+
+    i_input_fd = OpenFile( psz_arg, true, false );
+    p_input_aux = OpenAuxFile( psz_aux_file, true, false );
+    free( psz_aux_file );
+
+    lseek( i_input_fd, (off_t)i_len * i_nb_skipped_chunks, SEEK_SET );
+    fseeko( p_input_aux, 8 * i_nb_skipped_chunks, SEEK_SET );
+
+    pf_Read = file_Read;
+    pf_Delay = file_Delay;
+    pf_ExitRead = file_ExitRead;
+    return 0;
 }
 
 static ssize_t file_Write( const void *p_buf, size_t i_len )
@@ -224,21 +363,192 @@ static ssize_t file_Write( const void *p_buf, size_t i_len )
     if ( (i_ret = write( i_output_fd, p_buf, i_len )) < 0 )
     {
         msg_Err( NULL, "couldn't write to file" );
+        b_die = 1;
         return i_ret;
     }
 
-    p_aux[0] = i_stc >> 56;
-    p_aux[1] = (i_stc >> 48) & 0xff;
-    p_aux[2] = (i_stc >> 40) & 0xff;
-    p_aux[3] = (i_stc >> 32) & 0xff;
-    p_aux[4] = (i_stc >> 24) & 0xff;
-    p_aux[5] = (i_stc >> 16) & 0xff;
-    p_aux[6] = (i_stc >> 8) & 0xff;
-    p_aux[7] = (i_stc >> 0) & 0xff;
+    ToSTC( p_aux, i_stc );
     if ( fwrite( p_aux, 8, 1, p_output_aux ) != 1 )
+    {
         msg_Err( NULL, "couldn't write to auxiliary file" );
+        b_die = 1;
+    }
 
     return i_ret;
+}
+
+static void file_ExitWrite(void)
+{
+    close( i_output_fd );
+    fclose( p_output_aux );
+}
+
+static int file_InitWrite( const char *psz_arg, size_t i_len, bool b_append )
+{
+    char *psz_aux_file = GetAuxFile( psz_arg, i_len );
+    i_output_fd = OpenFile( psz_arg, false, b_append );
+    p_output_aux = OpenAuxFile( psz_aux_file, false, b_append );
+    free( psz_aux_file );
+
+    pf_Write = file_Write;
+    pf_ExitWrite = file_ExitWrite;
+    return 0;
+}
+
+/*****************************************************************************
+ * dir_*: handler for the auxiliary directory format
+ *****************************************************************************/
+static char *psz_input_dir_name;
+static size_t i_input_dir_len;
+static uint64_t i_input_dir_file;
+static uint64_t i_input_dir_delay;
+
+static ssize_t dir_Read( void *p_buf, size_t i_len )
+{
+    ssize_t i_ret;
+try_again:
+    i_ret = file_Read( p_buf, i_len );
+    if ( !i_ret )
+    {
+        b_die = 0; /* we're not dead yet */
+        close( i_input_fd );
+        fclose( p_input_aux );
+        i_input_fd = 0;
+
+        i_input_dir_file++;
+
+        i_input_fd = OpenDirFile( psz_input_dir_name, i_input_dir_file,
+                                  true, i_input_dir_len, &p_input_aux );
+        if ( i_input_fd < 0 )
+        {
+            msg_Err( NULL, "end of files reached" );
+            b_die = 1;
+            return 0;
+        }
+        goto try_again;
+    }
+    return i_ret;
+}
+
+static void dir_Delay(void)
+{
+    uint64_t i_wall = pf_Date() - i_input_dir_delay;
+
+    if ( i_stc > i_wall )
+        pf_Sleep( i_stc - i_wall );
+}
+
+static void dir_ExitRead(void)
+{
+    free( psz_input_dir_name );
+    if ( i_input_fd )
+    {
+        close( i_input_fd );
+        fclose( p_input_aux );
+    }
+}
+
+static int dir_InitRead( const char *psz_arg, size_t i_len,
+                         off_t i_nb_skipped_chunks, int64_t i_pos )
+{
+    if ( i_nb_skipped_chunks )
+    {
+        msg_Err( NULL, "unable to skip chunks with directory input" );
+        return -1;
+    }
+
+    if ( i_pos <= 0 )
+        i_pos += real_Date();
+    if ( i_pos <= 0 )
+    {
+        msg_Err( NULL, "invalid position" );
+        return -1;
+    }
+    i_first_stc = i_stc = i_pos;
+    i_input_dir_delay = real_Date() - i_stc;
+
+    psz_input_dir_name = strdup( psz_arg );
+    i_input_dir_len = i_len;
+    i_input_dir_file = GetDirFile( i_rotate_size, i_pos );
+
+    i_nb_skipped_chunks = LookupDirAuxFile( psz_input_dir_name,
+                                            i_input_dir_file, i_stc,
+                                            i_input_dir_len );
+    if ( i_nb_skipped_chunks < 0 )
+    {
+        /* Try at most one more chunk */
+        i_input_dir_file++;
+        i_nb_skipped_chunks = LookupDirAuxFile( psz_input_dir_name,
+                                                i_input_dir_file, i_stc,
+                                                i_input_dir_len );
+        if ( i_nb_skipped_chunks < 0 )
+        {
+            msg_Err( NULL, "position not found" );
+            return -1;
+        }
+    }
+
+    i_input_fd = OpenDirFile( psz_input_dir_name, i_input_dir_file,
+                              true, i_input_dir_len, &p_input_aux );
+
+    lseek( i_input_fd, (off_t)i_len * i_nb_skipped_chunks, SEEK_SET );
+    fseeko( p_input_aux, 8 * i_nb_skipped_chunks, SEEK_SET );
+
+    pf_Date = real_Date;
+    pf_Sleep = real_Sleep;
+    pf_Read = dir_Read;
+    pf_Delay = dir_Delay;
+    pf_ExitRead = dir_ExitRead;
+    return 0;
+}
+
+static char *psz_output_dir_name;
+static size_t i_output_dir_len;
+static uint64_t i_output_dir_file;
+
+static ssize_t dir_Write( const void *p_buf, size_t i_len )
+{
+    uint64_t i_dir_file = GetDirFile( i_rotate_size, i_stc );
+    if ( i_dir_file != i_output_dir_file )
+    {
+        if ( i_output_fd )
+        {
+            close( i_output_fd );
+            fclose( p_output_aux );
+        }
+
+        i_output_dir_file = i_dir_file;
+
+        i_output_fd = OpenDirFile( psz_output_dir_name, i_output_dir_file,
+                                   false, i_output_dir_len, &p_output_aux );
+    }
+
+    return file_Write( p_buf, i_len );
+}
+
+static void dir_ExitWrite(void)
+{
+    free( psz_output_dir_name );
+    if ( i_output_fd )
+    {
+        close( i_output_fd );
+        fclose( p_output_aux );
+    }
+}
+
+static int dir_InitWrite( const char *psz_arg, size_t i_len, bool b_append )
+{
+    psz_output_dir_name = strdup( psz_arg );
+    i_output_dir_len = i_len;
+    i_output_dir_file = 0;
+    i_output_fd = 0;
+
+    pf_Date = real_Date;
+    pf_Sleep = real_Sleep;
+    pf_Write = dir_Write;
+    pf_ExitWrite = dir_ExitWrite;
+
+    return 0;
 }
 
 /*****************************************************************************
@@ -272,9 +582,9 @@ static void GetPCR( const uint8_t *p_buffer, size_t i_read_size )
 int main( int i_argc, char **pp_argv )
 {
     int i_priority = -1;
-    int i_ttl = 0;
-    int i_skip_chunks = 0, i_nb_chunks = -1;
-    uint64_t i_duration = 0, i_last_stc = 0;
+    off_t i_skip_chunks = 0, i_nb_chunks = -1;
+    int64_t i_seek = 0;
+    uint64_t i_duration = 0;
     bool b_append = false;
     uint8_t *p_buffer, *p_read_buffer;
     size_t i_max_read_size, i_max_write_size;
@@ -283,7 +593,7 @@ int main( int i_argc, char **pp_argv )
     sigset_t set;
 
     /* Parse options */
-    while ( (c = getopt( i_argc, pp_argv, "i:t:p:s:n:d:aS:uUm:h" )) != -1 )
+    while ( (c = getopt( i_argc, pp_argv, "i:t:fp:s:n:k:d:aS:uUm:h" )) != -1 )
     {
         switch ( c )
         {
@@ -293,6 +603,10 @@ int main( int i_argc, char **pp_argv )
 
         case 't':
             i_ttl = strtol( optarg, NULL, 0 );
+            break;
+
+        case 'f':
+            b_sleep = false;
             break;
 
         case 'p':
@@ -307,12 +621,20 @@ int main( int i_argc, char **pp_argv )
             i_nb_chunks = strtol( optarg, NULL, 0 );
             break;
 
+        case 'k':
+            i_seek = strtoull( optarg, NULL, 0 );
+            break;
+
         case 'd':
             i_duration = strtoull( optarg, NULL, 0 );
             break;
 
         case 'a':
             b_append = true;
+            break;
+
+        case 'r':
+            i_rotate_size = strtoull( optarg, NULL, 0 );
             break;
 
         case 'S':
@@ -347,44 +669,54 @@ int main( int i_argc, char **pp_argv )
         usage();
 
     /* Open sockets */
-    if ( (i_input_fd = OpenSocket( pp_argv[optind], i_ttl, NULL )) >= 0 )
+    if ( udp_InitRead( pp_argv[optind], i_asked_payload_size, i_skip_chunks,
+                       i_seek ) < 0 )
     {
-        pf_Read = udp_Read;
-        pf_Skip = udp_Skip;
-    }
-    else
-    {
-        bool b_stream;
-        i_input_fd = OpenFile( pp_argv[optind], true, false, &b_stream );
-        if ( !b_stream )
+        int i_ret;
+        mode_t i_mode = StatFile( pp_argv[optind] );
+        if ( !i_mode )
         {
-            p_input_aux = OpenAuxFile( pp_argv[optind], true, false );
-            pf_Read = file_Read;
-            pf_Skip = file_Skip;
+            msg_Err( NULL, "input not found, exiting" );
+            exit(EXIT_FAILURE);
         }
+
+        if ( S_ISDIR( i_mode ) )
+            i_ret = dir_InitRead( pp_argv[optind], i_asked_payload_size,
+                                  i_skip_chunks, i_seek );
+        else if ( S_ISCHR( i_mode ) || S_ISFIFO( i_mode ) )
+            i_ret = stream_InitRead( pp_argv[optind], i_asked_payload_size,
+                                     i_skip_chunks, i_seek );
         else
+            i_ret = file_InitRead( pp_argv[optind], i_asked_payload_size,
+                                   i_skip_chunks, i_seek );
+        if ( i_ret == -1 )
         {
-            pf_Read = stream_Read;
-            pf_Skip = stream_Skip;
+            msg_Err( NULL, "couldn't open input, exiting" );
+            exit(EXIT_FAILURE);
         }
         b_input_udp = true; /* We don't need no, RTP header */
     }
     optind++;
 
-    if ( (i_output_fd = OpenSocket( pp_argv[optind], i_ttl, NULL ))
-           >= 0 )
-        pf_Write = udp_Write;
-    else
+    if ( udp_InitWrite( pp_argv[optind], i_asked_payload_size, b_append ) < 0 )
     {
-        bool b_stream;
-        i_output_fd = OpenFile( pp_argv[optind], false, b_append, &b_stream );
-        if ( !b_stream )
-        {
-            p_output_aux = OpenAuxFile( pp_argv[optind], false, b_append );
-            pf_Write = file_Write;
-        }
+        int i_ret;
+        mode_t i_mode = StatFile( pp_argv[optind] );
+
+        if ( S_ISDIR( i_mode ) )
+            i_ret = dir_InitWrite( pp_argv[optind], i_asked_payload_size,
+                                   b_append );
+        else if ( S_ISCHR( i_mode ) || S_ISFIFO( i_mode ) )
+            i_ret = stream_InitWrite( pp_argv[optind], i_asked_payload_size,
+                                      b_append );
         else
-            pf_Write = stream_Write;
+            i_ret = file_InitWrite( pp_argv[optind], i_asked_payload_size,
+                                    b_append );
+        if ( i_ret == -1 )
+        {
+            msg_Err( NULL, "couldn't open output, exiting" );
+            exit(EXIT_FAILURE);
+        }
         b_output_udp = true; /* We don't need no, RTP header */
     }
     optind++;
@@ -401,9 +733,6 @@ int main( int i_argc, char **pp_argv )
                                 RTP_HEADER_SIZE : 0);
     if ( b_input_udp && !b_output_udp )
         i_rtp_cc = rand() & 0xffff;
-
-    if ( i_skip_chunks )
-        pf_Skip( i_asked_payload_size, i_skip_chunks );
 
     /* Real-time priority */
     if ( i_priority > 0 )
@@ -443,7 +772,13 @@ int main( int i_argc, char **pp_argv )
         uint8_t *p_write_buffer;
         size_t i_write_size;
 
+        if ( i_duration && i_stc > i_first_stc + i_duration )
+            break;
+
         if ( i_read_size <= 0 ) continue;
+
+        if ( b_sleep && pf_Delay != NULL)
+            pf_Delay();
 
         /* Determine start and size of payload */
         if ( !b_input_udp )
@@ -520,19 +855,11 @@ int main( int i_argc, char **pp_argv )
         if ( i_nb_chunks > 0 )
             i_nb_chunks--;
         if ( !i_nb_chunks )
-            b_die = 1;
-
-        if ( i_duration )
-        {
-            if ( i_last_stc )
-            {
-                if ( i_last_stc <= i_stc )
-                    b_die = 1;
-            }
-            else
-                i_last_stc = i_stc + i_duration;
-        }
+            break;
     }
+
+    pf_ExitRead();
+    pf_ExitWrite();
 
     return EXIT_SUCCESS;
 }

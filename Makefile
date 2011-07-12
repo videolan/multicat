@@ -8,7 +8,7 @@ OBJ_MULTICAT = multicat.o util.o
 OBJ_INGESTS = ingests.o util.o
 OBJ_AGGREGARTP = aggregartp.o util.o
 OBJ_DESAGGREGARTP = desaggregartp.o util.o
-OBJ_OFFSETS = offsets.o
+OBJ_OFFSETS = offsets.o util.o
 
 PREFIX ?= /usr/local
 BIN = $(DESTDIR)/$(PREFIX)/bin
@@ -20,7 +20,7 @@ $(OBJ_MULTICAT): Makefile util.h
 $(OBJ_INGESTS): Makefile util.h
 $(OBJ_AGGREGARTP): Makefile util.h
 $(OBJ_DESAGGREGARTP): Makefile util.h
-$(OBJ_OFFSETS): Makefile
+$(OBJ_OFFSETS): Makefile util.h
 
 multicat: $(OBJ_MULTICAT)
 	$(CC) -o $@ $(OBJ_MULTICAT) $(LDLIBS)
@@ -35,7 +35,7 @@ desaggregartp: $(OBJ_DESAGGREGARTP)
 	$(CC) -o $@ $(OBJ_DESAGGREGARTP) $(LDLIBS)
 
 offsets: $(OBJ_OFFSETS)
-	$(CC) -o $@ $(OBJ_OFFSETS)
+	$(CC) -o $@ $(OBJ_OFFSETS) $(LDLIBS)
 
 clean:
 	-rm -f multicat $(OBJ_MULTICAT) ingests $(OBJ_INGESTS) aggregartp $(OBJ_AGGREGARTP) desaggregartp $(OBJ_DESAGGREGARTP) offsets $(OBJ_OFFSETS)
