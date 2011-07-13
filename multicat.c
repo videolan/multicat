@@ -83,7 +83,7 @@ static void usage(void)
     msg_Raw( NULL, "    -k: start at the given position (in 27 MHz units, negative = from the end)" );
     msg_Raw( NULL, "    -d: exit after definite time (in 27 MHz units)" );
     msg_Raw( NULL, "    -a: append to existing destination file (risky)" );
-    msg_Raw( NULL, "    -r: in directory mode, rotate file after this duration (default: 97200000000 ticks = 1 hour" );
+    msg_Raw( NULL, "    -r: in directory mode, rotate file after this duration (default: 97200000000 ticks = 1 hour)" );
     msg_Raw( NULL, "    -S: overwrite or create RTP SSRC" );
     msg_Raw( NULL, "    -u: source has no RTP header" );
     msg_Raw( NULL, "    -U: destination has no RTP header" );
