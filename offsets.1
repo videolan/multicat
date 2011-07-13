@@ -2,12 +2,13 @@
 .SH NAME
 offsets \- Manipulate auxiliary files created by ingests
 .SH SYNOPSIS
-.B affsets
+.B offsets
 <aux file> <27 MHz timestamp>
 .SH DESCRIPTION
-Offsets is a companion application for multicat, to manipulate auxiliary files.
+OffseTS is a companion application for multicat, to manipulate auxiliary files.
 Given an offset in time from the beginning of the file, it returns the offset
-of the position in number of packets.
+of the position in number of packets. OffseTS is currently deprecated in favour
+of using the -k and -d switches of multicat.
 .SH SEE ALSO
 .BR aggregartp (1).
 .BR desaggregartp (1).

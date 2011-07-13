@@ -8,14 +8,15 @@ efficiently manipulate multicast streams in general, and MPEG-2
 Transport Streams (ISO/IEC 13818-1) in particular.
 
 The multicat tool itself is a 1 input/1 output application. Inputs and
-outputs can be network streams (unicast and multicast), files, character
-devices or FIFOs.
+outputs can be network streams (unicast and multicast, IPv4 and IPv6), files,
+directories, character devices or FIFOs.
 
 Multicat tries to rebuild the internal clock of the input stream; but
 it wants to remain agnostic of what is transported, so in case of files
-the said clock is stored to an auxiliary file (example.aux accompanies
-example.ts) while recording. Other inputs are considered "live", and
-the input clock is simply derived from the reception time of the packets.
+or directories, the said clock is stored to an auxiliary file (example.aux
+accompanies example.ts) while recording. Other inputs are considered "live",
+and the input clock is simply derived from the reception time of the
+packets.
 
 IngesTS is a companion application designed to manipulate TS files. It
 reads the PCR values of the file, and builds the auxiliary file that is
@@ -39,7 +40,7 @@ The socket description format
 For conveniency all tools use the same way of describing a socket in a
 program argument:
 
-<connect address>:<connect port>@<bind address>:<bind port>
+<connect address>:<connect port>@<bind address>:<bind port>/<options>
 
 All parts are optional; default port (1234) or wildcard address will then
 be used.
@@ -57,9 +58,20 @@ Writing to a multicast stream on port 5004:
 The same, but binding to a specific interface:
     239.255.0.1:5004@192.168.0.2
 
+Options include:
+ /ifindex=X (binds to a specific network interface, by link number)
+ /ifaddr=XXX.XXX.XXX.XXX (binds to a specific network interface, by address)
+ /ttl=XX (time-to-live of the UDP packet)
+ /tos=XX (sets the IPv4 Type Of Service option)
 
-Using Multicat
-==============
+Example:
+    239.255.0.1:5004/ttl=64
+
+Also, multicat supports IPv6 addresses.
+
+
+Basic uses
+==========
 
 Recording a multicast address to a file:
 
@@ -75,11 +87,27 @@ multicat -p 68 -u @239.255.0.1:5004 239.255.0.2:5004
 
 The PCR PID is here supposed to be 68. If you don't specify it, the timestamps
 will not be RFC-compliant (but will work in most cases). You can use the
-get_pcr_pid tool from libdvbpsi to determine it. Otherwise, if you are sure
-the stream contains a single program, and only one PID carries a PCR, you can
-pass "-p 8192" the disable the PID check. This isn't on by default because
+mpeg_print_pcr example from biTStream to determine it. Otherwise, if you are
+sure the stream contains a single program, and only one PID carries a PCR, you
+can pass "-p 8192" the disable the PID check. This isn't on by default because
 it can produce awful things with multi-program transport streams, and the
 world would be a better place if people had to knowingly turn it on.
+
+Starting at a given position for a given duration:
+
+multicat -p 68 -k 270000000 -d 2700000000 /tmp/myfile.ts 239.255.0.2:5004
+
+In this case multicat discards the first 10 seconds, and only plays the file
+for 100 seconds. Internally multicat uses a 27 MHz monotonic clock, and all
+offsets (starting from 0) and durations are expressed in this unit.
+
+Making an extract of a recorded file to a plain TS file:
+
+multicat -f -k 270000000 -d 2700000000 /tmp/myfile.ts /tmp/extract.ts
+
+The option -f allows outputting the extract as fast as the output item can
+write it, without reproducing the same pace as the original stream (and thus,
+waiting 100 seconds).
 
 
 Using IngesTS
@@ -93,6 +121,35 @@ The same note as above applies to ingesTS.
 Playing the file:
 
 multicat -p 68 /tmp/afile.ts 239.255.0.2:5004
+
+
+Working with directories
+========================
+
+Starting with version 2.0, multicat can write or read a continuous stream to
+discontinuous buffers, while still retaining the original properties. For
+instance:
+
+mkdir mydir
+multicat @239.255.255.1:5004 mydir
+
+creates file XXXXXX.ts and XXXXXX.aux in mydir. Every hour, multicat closes
+both files, and creates (XXXXXX+1).ts and (XXXXXX+1).aux. And so one. The
+stream can then be identically replayed with a 100 seconds delay with:
+
+multicat -p 68 -k -2700000000 mydir 239.255.255.2:5004
+
+A negative value to -k implies "from the end", in this case from the present
+time. To make an extract of the stream:
+
+multicat -f -k 35383033980000000 -d 27000000000 mydir extract.ts
+
+With the directory input/output, timestamps represent the number of ticks of
+a 27 MHz real-time clock since the 1st of January 1970 (UNIX Epoch). It is
+therefore possible to pass absolute (positive) dates to -k.
+
+There is no built-in expiration of files in multicat; to avoid filling up the
+partition, it is necessary to run multicat_expire.sh every hour.
 
 
 Using OffseTS
@@ -115,6 +172,10 @@ Alternatively, if we want to *remove* the first hour:
 dd if=/tmp/myfile.ts of=/tmp/mynewfile.ts bs=1316 skip=556896
 
 It can also be done with multicat using the -s and -n options.
+
+OffseTS is currently deprecated in favour of using the -k and -d options of
+the multicat program. OffseTS is still distributed for compatibility, but
+doesn't support the new directory input.
 
 
 Using AggregaRTP and DesaggregaRTP

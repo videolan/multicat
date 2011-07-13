@@ -3,44 +3,53 @@
 multicat \- Multicast equivalent of Netcat
 .SH SYNOPSIS
 .B multicat
-[\fI-i <RT priority>\fR] [\fI-t <ttl>\fR] [\fI-p <PCR PID>\fR] [\fI-s <chunks>\fR]
-[\fI-n <chunks>\fR] [\fI-d <time>\fR] [\fI-a\fR] [\fI-S <SSRC IP>\fR] [\fI-u\fR]
+[\fI-i <RT priority>\fR] [\fI-t <ttl>\fR] [\fI-f\fR] [\fI-p <PCR PID>\fR] [\fI-s <chunks>\fR]
+[\fI-n <chunks>\fR] [\fI-k <start time>\fR] [\fI-d <duration>\fR] [\fI-a\fR] [\fI-r <file duration>\fR] [\fI-S <SSRC IP>\fR] [\fI-u\fR]
 [\fI-U\fR] [\fI-m <payload size>\fR] <input item> <output item>
 .SH DESCRIPTION
 Multicat is a 1 input/1 output application. Inputs and outputs can be network
-streams (unicast and multicast), files, character devices or FIFOs. It is thought
+streams (unicast and multicast, IPv4 and IPv6), files, directories, character devices or FIFOs. It is thought
 to be a multicast equivalent of the popular netcat tool.
 
 Multicat tries to rebuild the internal clock of the input stream; but it wants
-to remain agnostic of what is transported, so in case of files the said clock
+to remain agnostic of what is transported, so in case of files and directories, the said clock
 is stored to an auxiliary file (example.aux accompanies example.ts) while
 recording. Other inputs are considered "live", and the input clock is simply
 derived from the reception time of the packets.
 .SH ITEMS
 Item format \fB<file path | device path | FIFO path | network host>\fR
 .TP
-Host format \fB[<connect addr>[:<connect port>]][@[<bind addr][:<bind port>]]\fR
+Host format \fB[<connect addr>[:<connect port>]][@[<bind addr][:<bind port>]][/<options>]\fR
 .SH OPTIONS
 .B \-a
 Append to existing destination file (risky)
 .TP
-\fB\-d\fR <time>
+\fB\-d\fR <duration>
 Exit after a definite time (in 27 MHz units)
 .TP
-\fB\-i\fR <RT priority>
-Real time priority
+\fB\-f
+Output packets as fast as possible
 .TP
 .B \-h
 Show summary of options
 .TP
+\fB\-i\fR <RT priority>
+Real time priority
+.TP
+\fB\-k\fR <time>
+Start at the given position (in 27 MHz units, negative = from the end)
+.TP
 \fB\-m\fR <payload size>
 Size of the payload chunk, excluding optional RTP header (default 1316)
 .TP
-\fR\-n\fR <chunks>
+\fB\-n\fR <chunks>
 Exit after playing N chunks of payload
 .TP
 \fB\-p\fR <PCR PID>
 PCR PID
+.TP
+\fB\-r\fR <duration>
+In directory mode, rotate file after this duration (default: 97200000000 ticks = 1 hour)
 .TP
 \fB\-s\fR <chunks>
 Skip the first N chunks of payload

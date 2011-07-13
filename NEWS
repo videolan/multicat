@@ -1,0 +1,11 @@
+$Id: NEWS 194 2011-07-13 19:59:32Z massiot $
+
+Changes between 1.0 and 2.0:
+----------------------------
+  * Support for directory input/output, where the stream is stored into
+    "chunks" of fixed duration, accompanied with their auxiliary file
+  * Merge OffseTS functionality into multicat itself (-k and -d)
+  * Support for IPv6
+  * Add DVBlast-style options for host parsing (ifindex, ifaddr, ttl and tos)
+  * Add the ability to output a stream as fast as possible (-f)
+  * Fix miscellaneous bugs
