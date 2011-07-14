@@ -73,9 +73,10 @@ void (*pf_ExitWrite)(void);
 
 static void usage(void)
 {
-    msg_Raw( NULL, "Usage: multicat [-i <RT priority>] [-t <ttl>] [-f] [-p <PCR PID>] [-s <chunks>] [-n <chunks>] [-k <start time>] [-d <duration>] [-a] [-r <file duration>] [-S <SSRC IP>] [-u] [-U] [-m <payload size>] <input item> <output item>" );
+    msg_Raw( NULL, "Usage: multicat [-i <RT priority>] [-t <ttl>] [-X] [-f] [-p <PCR PID>] [-s <chunks>] [-n <chunks>] [-k <start time>] [-d <duration>] [-a] [-r <file duration>] [-S <SSRC IP>] [-u] [-U] [-m <payload size>] <input item> <output item>" );
     msg_Raw( NULL, "    item format: <file path | device path | FIFO path | directory path | network host>" );
     msg_Raw( NULL, "    host format: [<connect addr>[:<connect port>]][@[<bind addr][:<bind port>]]" );
+    msg_Raw( NULL, "    -X: also pass-through all packets to stdout" );
     msg_Raw( NULL, "    -f: output packets as fast as possible" );
     msg_Raw( NULL, "    -p: overwrite or create RTP timestamps using PCR PID (MPEG-2/TS)" );
     msg_Raw( NULL, "    -s: skip the first N chunks of payload [deprecated]" );
@@ -582,6 +583,7 @@ static void GetPCR( const uint8_t *p_buffer, size_t i_read_size )
 int main( int i_argc, char **pp_argv )
 {
     int i_priority = -1;
+    bool b_passthrough = false;
     off_t i_skip_chunks = 0, i_nb_chunks = -1;
     int64_t i_seek = 0;
     uint64_t i_duration = 0;
@@ -593,7 +595,7 @@ int main( int i_argc, char **pp_argv )
     sigset_t set;
 
     /* Parse options */
-    while ( (c = getopt( i_argc, pp_argv, "i:t:fp:s:n:k:d:aS:uUm:h" )) != -1 )
+    while ( (c = getopt( i_argc, pp_argv, "i:t:Xfp:s:n:k:d:ar:S:uUm:h" )) != -1 )
     {
         switch ( c )
         {
@@ -603,6 +605,10 @@ int main( int i_argc, char **pp_argv )
 
         case 't':
             i_ttl = strtol( optarg, NULL, 0 );
+            break;
+
+        case 'X':
+            b_passthrough = true;
             break;
 
         case 'f':
@@ -851,6 +857,10 @@ int main( int i_argc, char **pp_argv )
         }
 
         pf_Write( p_write_buffer, i_write_size );
+        if ( b_passthrough )
+            if ( write( STDOUT_FILENO, p_write_buffer, i_write_size )
+                  != i_write_size )
+                msg_Warn( NULL, "write(stdout) error (%s)", strerror(errno) );
 
         if ( i_nb_chunks > 0 )
             i_nb_chunks--;

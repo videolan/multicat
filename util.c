@@ -173,9 +173,10 @@ static void _wall_Sleep( uint64_t i_delay, bool b_realtime )
     ts.tv_nsec = (i_delay % 27000000) * 1000 / 27;
 
 #if defined( HAVE_CLOCK_NANOSLEEP )
-    int val;
-    while ( !b_realtime || ( val = clock_nanosleep( CLOCK_MONOTONIC, 0, &ts, &ts ) ) == EINTR );
-    if( !b_realtime || val == EINVAL )
+    int val = EINVAL;
+    if ( !b_realtime )
+        while ( ( val = clock_nanosleep( CLOCK_MONOTONIC, 0, &ts, &ts ) ) == EINTR );
+    if( val == EINVAL )
     {
         ts.tv_sec = i_delay / 27000000;
         ts.tv_nsec = (i_delay % 27000000) * 1000 / 27;
@@ -737,15 +738,15 @@ char *GetAuxFile( const char *psz_arg, size_t i_payload_size )
 
     strcpy( psz_aux, psz_arg );
 
-    /* Skip first character of base name */
     psz_token = strrchr( psz_aux, '/' );
     if ( psz_token != NULL )
         psz_token++;
     else
         psz_token = psz_aux + 1;
+    if ( *psz_token ) psz_token++; /* Skip first character of base name */
 
     /* Strip extension */
-    psz_token = strrchr( psz_aux, '.' );
+    psz_token = strrchr( psz_token, '.' );
     if ( psz_token ) *psz_token = '\0';
 
     /* Append extension */
