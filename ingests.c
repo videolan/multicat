@@ -66,10 +66,8 @@ static void usage(void)
  *****************************************************************************/
 static void OutputAux( int i_nb_payloads, uint64_t i_duration )
 {
-    uint8_t *p_aux;
+    uint8_t p_aux[i_nb_payloads*sizeof(uint64_t)];
     int i;
-
-    p_aux = malloc( i_nb_payloads * sizeof(uint64_t) );
 
     for ( i = 0; i < i_nb_payloads; i++ )
     {
@@ -252,6 +250,7 @@ int main( int i_argc, char **pp_argv )
         }
     }
 
+    free( p_buffer );
     if ( !i_last_pcr_diff )
         msg_Err( NULL, "no PCR found" );
     else
