@@ -1,7 +1,7 @@
 /*****************************************************************************
  * offsets.c: find position in an aux file
  *****************************************************************************
- * Copyright (C) 2009 VideoLAN
+ * Copyright (C) 2009, 2011 VideoLAN
  * $Id: offsets.c 10 2005-11-16 18:09:00Z cmassiot $
  *
  * Authors: Christophe Massiot <massiot@via.ecp.fr>

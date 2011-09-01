@@ -1,7 +1,7 @@
 /*****************************************************************************
  * multicat.c: netcat-equivalent for multicast
  *****************************************************************************
- * Copyright (C) 2009 VideoLAN
+ * Copyright (C) 2009, 2011 VideoLAN
  * $Id: multicat.c 48 2007-11-30 14:08:21Z cmassiot $
  *
  * Authors: Christophe Massiot <massiot@via.ecp.fr>
@@ -21,6 +21,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
+/* POLLRDHUP */
+#define _GNU_SOURCE 1
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/types.h>
@@ -38,11 +41,12 @@
 #include <pthread.h>
 #include <poll.h>
 
+#include <bitstream/ietf/rtp.h>
+#include <bitstream/mpeg/ts.h>
+
 #include "util.h"
 
 #define POLL_TIMEOUT 1000 /* 1 s */
-#define RTP_HEADER_MAX_SIZE (RTP_HEADER_SIZE + 15 * 4)
-#define RTP_TS_TYPE 33
 
 /*****************************************************************************
  * Local declarations
@@ -56,10 +60,11 @@ static bool b_overwrite_ssrc = false;
 static in_addr_t i_ssrc = 0;
 static bool b_input_udp = false, b_output_udp = false;
 static size_t i_asked_payload_size = DEFAULT_PAYLOAD_SIZE;
+static size_t i_rtp_header_size = RTP_HEADER_SIZE;
 static uint64_t i_rotate_size = DEFAULT_ROTATE_SIZE;
 
 static volatile sig_atomic_t b_die = 0;
-static uint16_t i_rtp_cc;
+static uint16_t i_rtp_seqnum;
 static uint64_t i_stc = 0; /* system time clock, used for date calculations */
 static uint64_t i_first_stc = 0;
 static uint64_t i_pcr = 0, i_pcr_stc = 0; /* for RTP/TS output */
@@ -73,7 +78,7 @@ void (*pf_ExitWrite)(void);
 
 static void usage(void)
 {
-    msg_Raw( NULL, "Usage: multicat [-i <RT priority>] [-t <ttl>] [-X] [-f] [-p <PCR PID>] [-s <chunks>] [-n <chunks>] [-k <start time>] [-d <duration>] [-a] [-r <file duration>] [-S <SSRC IP>] [-u] [-U] [-m <payload size>] <input item> <output item>" );
+    msg_Raw( NULL, "Usage: multicat [-i <RT priority>] [-t <ttl>] [-X] [-f] [-p <PCR PID>] [-s <chunks>] [-n <chunks>] [-k <start time>] [-d <duration>] [-a] [-r <file duration>] [-S <SSRC IP>] [-u] [-U] [-m <payload size>] [-R <RTP header size>] <input item> <output item>" );
     msg_Raw( NULL, "    item format: <file path | device path | FIFO path | directory path | network host>" );
     msg_Raw( NULL, "    host format: [<connect addr>[:<connect port>]][@[<bind addr][:<bind port>]]" );
     msg_Raw( NULL, "    -X: also pass-through all packets to stdout" );
@@ -89,6 +94,7 @@ static void usage(void)
     msg_Raw( NULL, "    -u: source has no RTP header" );
     msg_Raw( NULL, "    -U: destination has no RTP header" );
     msg_Raw( NULL, "    -m: size of the payload chunk, excluding optional RTP header (default 1316)" );
+    msg_Raw( NULL, "    -R: size of the optional RTP header (default 12)" );
     exit(EXIT_FAILURE);
 }
 
@@ -109,12 +115,18 @@ static bool Poll(void)
     int i_ret;
 
     pfd.fd = i_input_fd;
-    pfd.events = POLLIN;
+    pfd.events = POLLIN | POLLERR | POLLRDHUP | POLLHUP;
 
     i_ret = poll( &pfd, 1, POLL_TIMEOUT );
     if ( i_ret < 0 )
     {
         msg_Err( NULL, "poll error (%s)", strerror(errno) );
+        b_die = 1;
+        return false;
+    }
+    if ( pfd.revents & (POLLERR | POLLRDHUP | POLLHUP) )
+    {
+        msg_Err( NULL, "poll error" );
         b_die = 1;
         return false;
     }
@@ -124,9 +136,44 @@ static bool Poll(void)
 }
 
 /*****************************************************************************
+ * tcp_*: TCP socket handlers (only what differs from UDP)
+ *****************************************************************************/
+static uint8_t *p_tcp_buffer = NULL;
+static size_t i_tcp_size = 0;
+
+static ssize_t tcp_Read( void *p_buf, size_t i_len )
+{
+    if ( p_tcp_buffer == NULL )
+        p_tcp_buffer = malloc(i_len);
+
+    uint8_t *p_read_buffer;
+    ssize_t i_read_size = i_len;
+    p_read_buffer = p_tcp_buffer + i_tcp_size;
+    i_read_size -= i_tcp_size;
+
+    if ( (i_read_size = recv( i_input_fd, p_read_buffer, i_read_size, 0 )) < 0 )
+    {
+        msg_Err( NULL, "recv error (%s)", strerror(errno) );
+        b_die = 1;
+        return 0;
+    }
+
+    i_tcp_size += i_read_size;
+    i_stc = pf_Date();
+
+    if ( i_tcp_size != i_len )
+        return 0;
+
+    memcpy( p_buf, p_tcp_buffer, i_len );
+    i_tcp_size = 0;
+    return i_len;
+}
+
+/*****************************************************************************
  * udp_*: UDP socket handlers
  *****************************************************************************/
 static off_t i_udp_nb_skips = 0;
+static bool b_tcp = false;
 
 static ssize_t udp_Read( void *p_buf, size_t i_len )
 {
@@ -140,14 +187,20 @@ static ssize_t udp_Read( void *p_buf, size_t i_len )
         return 0;
     }
 
-    if ( (i_ret = recv( i_input_fd, p_buf, i_len, 0 )) < 0 )
+    if ( !b_tcp )
     {
-        msg_Err( NULL, "recv error (%s)", strerror(errno) );
-        b_die = 1;
-        return 0;
-    }
+        if ( (i_ret = recv( i_input_fd, p_buf, i_len, 0 )) < 0 )
+        {
+            msg_Err( NULL, "recv error (%s)", strerror(errno) );
+            b_die = 1;
+            return 0;
+        }
 
-    i_stc = pf_Date();
+        i_stc = pf_Date();
+    }
+    else
+        i_ret = tcp_Read( p_buf, i_len );
+
     if ( i_udp_nb_skips )
     {
         i_udp_nb_skips--;
@@ -159,12 +212,15 @@ static ssize_t udp_Read( void *p_buf, size_t i_len )
 static void udp_ExitRead(void)
 {
     close( i_input_fd );
+    if ( p_tcp_buffer != NULL )
+        free( p_tcp_buffer );
 }
 
 static int udp_InitRead( const char *psz_arg, size_t i_len,
                          off_t i_nb_skipped_chunks, int64_t i_pos )
 {
-    if ( i_pos || (i_input_fd = OpenSocket( psz_arg, i_ttl, NULL )) < 0 )
+    if ( i_pos || (i_input_fd = OpenSocket( psz_arg, i_ttl, DEFAULT_PORT, 0,
+                                            NULL, &b_tcp )) < 0 )
         return -1;
 
     i_udp_nb_skips = i_nb_skipped_chunks;
@@ -174,12 +230,20 @@ static int udp_InitRead( const char *psz_arg, size_t i_len,
     return 0;
 }
 
+/* Please note that the write functions also work for TCP */
 static ssize_t udp_Write( const void *p_buf, size_t i_len )
 {
-    size_t i_ret;
+    ssize_t i_ret;
     if ( (i_ret = send( i_output_fd, p_buf, i_len, 0 )) < 0 )
-        msg_Warn( NULL, "write error (%s)", strerror(errno) );
-        /* do not set b_die to true because these errors can be transient */
+    {
+        if ( errno == EBADF || errno == ECONNRESET || errno == EPIPE )
+        {
+            msg_Err( NULL, "write error (%s)", strerror(errno) );
+            b_die = 1;
+        }
+        /* otherwise do not set b_die because these errors can be transient */
+        return 0;
+    }
 
     return i_ret;
 }
@@ -191,7 +255,8 @@ static void udp_ExitWrite(void)
 
 static int udp_InitWrite( const char *psz_arg, size_t i_len, bool b_append )
 {
-    if ( (i_output_fd = OpenSocket( psz_arg, i_ttl, NULL )) < 0 )
+    if ( (i_output_fd = OpenSocket( psz_arg, i_ttl, 0, DEFAULT_PORT,
+                                    NULL, NULL )) < 0 )
         return -1;
 
     pf_Write = udp_Write;
@@ -252,7 +317,7 @@ static int stream_InitRead( const char *psz_arg, size_t i_len,
 
 static ssize_t stream_Write( const void *p_buf, size_t i_len )
 {
-    size_t i_ret;
+    ssize_t i_ret;
     if ( (i_ret = write( i_output_fd, p_buf, i_len )) < 0 )
     {
         msg_Err( NULL, "write error (%s)", strerror(errno) );
@@ -559,17 +624,18 @@ static void GetPCR( const uint8_t *p_buffer, size_t i_read_size )
 {
     while ( i_read_size >= TS_SIZE )
     {
-        uint16_t i_pid = ts_GetPID( p_buffer );
+        uint16_t i_pid = ts_get_pid( p_buffer );
 
-        if ( !ts_CheckSync( p_buffer ) )
+        if ( !ts_validate( p_buffer ) )
         {
             msg_Warn( NULL, "invalid TS packet (sync=0x%x)", p_buffer[0] );
             return;
         }
         if ( (i_pid == i_pcr_pid || i_pcr_pid == 8192)
-              && ts_HasPCR( p_buffer ) )
+              && ts_has_adaptation(p_buffer) && ts_get_adaptation(p_buffer)
+              && tsaf_has_pcr(p_buffer) )
         {
-            i_pcr = ts_GetPCR( p_buffer ) * 300 + ts_GetPCRExt( p_buffer );
+            i_pcr = tsaf_get_pcr( p_buffer ) * 300 + tsaf_get_pcrext( p_buffer );
             i_pcr_stc = i_stc;
         }
         p_buffer += TS_SIZE;
@@ -595,7 +661,7 @@ int main( int i_argc, char **pp_argv )
     sigset_t set;
 
     /* Parse options */
-    while ( (c = getopt( i_argc, pp_argv, "i:t:Xfp:s:n:k:d:ar:S:uUm:h" )) != -1 )
+    while ( (c = getopt( i_argc, pp_argv, "i:t:Xfp:s:n:k:d:ar:S:uUm:R:h" )) != -1 )
     {
         switch ( c )
         {
@@ -665,6 +731,10 @@ int main( int i_argc, char **pp_argv )
             i_asked_payload_size = strtol( optarg, NULL, 0 );
             break;
 
+        case 'R':
+            i_rtp_header_size = strtol( optarg, NULL, 0 );
+            break;
+
         case 'h':
         default:
             usage();
@@ -729,16 +799,16 @@ int main( int i_argc, char **pp_argv )
 
     srand( time(NULL) * getpid() );
     i_max_read_size = i_asked_payload_size + (b_input_udp ? 0 :
-                                              RTP_HEADER_MAX_SIZE);
+                                              i_rtp_header_size);
     i_max_write_size = i_asked_payload_size + (b_output_udp ? 0 :
                                         (b_input_udp ? RTP_HEADER_SIZE :
-                                         RTP_HEADER_MAX_SIZE));
+                                         i_rtp_header_size));
     p_buffer = malloc( (i_max_read_size > i_max_write_size) ? i_max_read_size :
                        i_max_write_size );
     p_read_buffer = p_buffer + ((b_input_udp && !b_output_udp) ?
                                 RTP_HEADER_SIZE : 0);
     if ( b_input_udp && !b_output_udp )
-        i_rtp_cc = rand() & 0xffff;
+        i_rtp_seqnum = rand() & 0xffff;
 
     /* Real-time priority */
     if ( i_priority > 0 )
@@ -763,7 +833,8 @@ int main( int i_argc, char **pp_argv )
 
     if ( sigaction( SIGTERM, &sa, NULL ) == -1 ||
          sigaction( SIGHUP, &sa, NULL ) == -1 ||
-         sigaction( SIGINT, &sa, NULL ) == -1 )
+         sigaction( SIGINT, &sa, NULL ) == -1 ||
+         sigaction( SIGPIPE, &sa, NULL ) == -1 )
     {
         msg_Err( NULL, "couldn't set signal handler: %s", strerror(errno) );
         exit(EXIT_FAILURE);
@@ -789,9 +860,9 @@ int main( int i_argc, char **pp_argv )
         /* Determine start and size of payload */
         if ( !b_input_udp )
         {
-            if ( !rtp_CheckHdr( p_read_buffer ) )
+            if ( !rtp_check_hdr( p_read_buffer ) )
                 msg_Warn( NULL, "invalid RTP packet received" );
-            p_payload = rtp_GetPayload( p_read_buffer );
+            p_payload = rtp_payload( p_read_buffer );
             i_payload_size = p_read_buffer + i_read_size - p_payload;
         }
         else
@@ -803,7 +874,7 @@ int main( int i_argc, char **pp_argv )
         /* Pad to get the asked payload size */
         while ( i_payload_size + TS_SIZE <= i_asked_payload_size )
         {
-            ts_Pad( &p_payload[i_payload_size] );
+            ts_pad( &p_payload[i_payload_size] );
             i_read_size += TS_SIZE;
             i_payload_size += TS_SIZE;
         }
@@ -821,21 +892,23 @@ int main( int i_argc, char **pp_argv )
                 p_write_buffer = p_buffer;
                 i_write_size = i_payload_size + RTP_HEADER_SIZE;
 
-                rtp_SetHdr( p_write_buffer, i_rtp_cc );
-                i_rtp_cc++;
+                rtp_set_hdr( p_write_buffer );
+                rtp_set_type( p_write_buffer, RTP_TYPE_TS );
+                rtp_set_seqnum( p_write_buffer, i_rtp_seqnum );
+                i_rtp_seqnum++;
 
                 if ( i_pcr_pid )
                 {
                     GetPCR( p_payload, i_payload_size );
-                    rtp_SetTimestamp( p_write_buffer,
-                                      (i_pcr + (i_stc - i_pcr_stc)) / 300 );
+                    rtp_set_timestamp( p_write_buffer,
+                                       (i_pcr + (i_stc - i_pcr_stc)) / 300 );
                 }
                 else
                 {
                     /* This isn't RFC-compliant but no one really cares */
-                    rtp_SetTimestamp( p_write_buffer, i_stc / 300 );
+                    rtp_set_timestamp( p_write_buffer, i_stc / 300 );
                 }
-                rtp_SetSSRC( p_write_buffer, (uint8_t *)&i_ssrc );
+                rtp_set_ssrc( p_write_buffer, (uint8_t *)&i_ssrc );
             }
             else /* RTP output, RTP input */
             {
@@ -844,15 +917,15 @@ int main( int i_argc, char **pp_argv )
 
                 if ( i_pcr_pid )
                 {
-                    if ( rtp_GetType( p_write_buffer ) != RTP_TS_TYPE )
+                    if ( rtp_get_type( p_write_buffer ) != RTP_TYPE_TS )
                         msg_Warn( NULL, "input isn't MPEG transport stream" );
                     else
                         GetPCR( p_payload, i_payload_size );
-                    rtp_SetTimestamp( p_write_buffer,
-                                      (i_pcr + (i_stc - i_pcr_stc)) / 300 );
+                    rtp_set_timestamp( p_write_buffer,
+                                       (i_pcr + (i_stc - i_pcr_stc)) / 300 );
                 }
                 if ( b_overwrite_ssrc )
-                    rtp_SetSSRC( p_write_buffer, (uint8_t *)&i_ssrc );
+                    rtp_set_ssrc( p_write_buffer, (uint8_t *)&i_ssrc );
             }
         }
 

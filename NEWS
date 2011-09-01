@@ -4,8 +4,16 @@ Changes between 1.0 and 2.0:
 ----------------------------
   * Support for directory input/output, where the stream is stored into
     "chunks" of fixed duration, accompanied with their auxiliary file
+  * Support for TCP sockets in multicat, aggregartp and reordertp (/tcp)
   * Merge OffseTS functionality into multicat itself (-k and -d)
   * Support for IPv6
   * Add DVBlast-style options for host parsing (ifindex, ifaddr, ttl and tos)
   * Add the ability to output a stream as fast as possible (-f)
+  * Renamed desaggregartp to reordeRTP
+  * Support for packet retransmission between aggregaRTP and reordeRTP
+  * Use biTStream instead of internal parsing functions
+  * Removed limits on number of inputs/outputs in aggregaRTP and reordeRTP
+  * Finer jitter control in reordeRTP
+  * Fix timestamping error in ingesTS with streams where the first packet
+    doesn't hold a PCR (re-ingest all existing streams)
   * Fix miscellaneous bugs

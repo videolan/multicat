@@ -1,7 +1,7 @@
 /*****************************************************************************
  * ingests.c: create the aux file for a transport stream file
  *****************************************************************************
- * Copyright (C) 2009 VideoLAN
+ * Copyright (C) 2009, 2011 VideoLAN
  * $Id: ingests.c 52 2009-10-06 16:48:00Z cmassiot $
  *
  * Authors: Christophe Massiot <massiot@via.ecp.fr>
@@ -30,6 +30,8 @@
 #include <stdbool.h>
 #include <string.h>
 #include <errno.h>
+
+#include <bitstream/mpeg/ts.h>
 
 #include "util.h"
 
@@ -119,7 +121,7 @@ static void OutputFirst(void)
 {
     i_last_nb_payloads = (i_ts_since_output + i_ts_in_payload - 1)
                           / i_ts_in_payload;
-    i_ts_since_output -= i_last_nb_payloads;
+    i_ts_since_output -= i_last_nb_payloads * i_ts_in_payload;
 }
 
 /*****************************************************************************
@@ -138,9 +140,9 @@ static void OutputLast(void)
  *****************************************************************************/
 static void TSHandle( uint8_t *p_ts )
 {
-    uint16_t i_pid = ts_GetPID( p_ts );
+    uint16_t i_pid = ts_get_pid( p_ts );
 
-    if ( !ts_CheckSync( p_ts ) )
+    if ( !ts_validate( p_ts ) )
     {
         msg_Err( NULL, "lost TS synchro, go and fix your file (pos=%llu)",
                  (uint64_t)i_ts_read * TS_SIZE );
@@ -149,9 +151,11 @@ static void TSHandle( uint8_t *p_ts )
 
     i_ts_since_output++;
 
-    if ( (i_pid == i_pcr_pid || i_pcr_pid == 8192) && ts_HasPCR( p_ts ) )
+    if ( (i_pid == i_pcr_pid || i_pcr_pid == 8192)
+          && ts_has_adaptation(p_ts) && ts_get_adaptation(p_ts)
+          && tsaf_has_pcr(p_ts) )
     {
-        uint64_t i_pcr = ts_GetPCR( p_ts ) * 300 + ts_GetPCRExt( p_ts );
+        uint64_t i_pcr = tsaf_get_pcr( p_ts ) * 300 + tsaf_get_pcrext( p_ts );
 
         if ( i_last_pcr == POW2_33 * 300 ) /* init */
         {

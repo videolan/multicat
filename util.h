@@ -1,7 +1,7 @@
 /*****************************************************************************
  * util.h: Utils for the multicat suite
  *****************************************************************************
- * Copyright (C) 2009 VideoLAN
+ * Copyright (C) 2009, 2011 VideoLAN
  * $Id: multicat.h 65 2009-11-15 22:57:53Z massiot $
  *
  * Authors: Christophe Massiot <massiot@via.ecp.fr>
@@ -45,7 +45,8 @@ uint64_t wall_Date( void );
 void wall_Sleep( uint64_t i_delay );
 uint64_t real_Date( void );
 void real_Sleep( uint64_t i_delay );
-int OpenSocket( const char *_psz_arg, int i_ttl, unsigned int *pi_weight );
+int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
+                uint16_t i_connect_port, unsigned int *pi_weight, bool *pb_tcp );
 mode_t StatFile(const char *psz_arg);
 int OpenFile( const char *psz_arg, bool b_read, bool b_append );
 char *GetAuxFile( const char *psz_arg, size_t i_payload_size );
@@ -85,111 +86,42 @@ static inline void ToSTC( uint8_t *p_aux, uint64_t i_stc )
 }
 
 /*****************************************************************************
- * Miscellaneous RTP handlers
+ * Retx helpers - biTStream style
  *****************************************************************************/
-/*
- * Reminder : RTP header
-    0                   1                   2                   3
-    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-   |V=2|P|X|  CC   |M|     PT      |       sequence number         |
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-   |                           timestamp                           |
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-   |           synchronization source (SSRC) identifier            |
-   +=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+
-   |            contributing source (CSRC) identifiers             |
-   |                             ....                              |
-   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
- */
+#define RETX_HEADER_SIZE 8
 
-static inline bool rtp_CheckHdr( const uint8_t *p_hdr )
+static inline void retx_init(uint8_t *p_retx)
 {
-    return (p_hdr[0] & 0xc0) == 0x80;
+    p_retx[0] = 'R';
+    p_retx[1] = 'E';
+    p_retx[2] = 'T';
+    p_retx[3] = 'X';
 }
 
-static inline uint8_t rtp_GetType( const uint8_t *p_hdr )
+static inline bool retx_check(const uint8_t *p_retx)
 {
-    return p_hdr[1] & 0x7f;
+    return p_retx[0] == 'R' && p_retx[1] == 'E' && p_retx[2] == 'T' &&
+           p_retx[3] == 'X';
 }
 
-static inline uint32_t rtp_GetTimestamp( uint8_t *p_hdr )
+static inline void retx_set_seqnum(uint8_t *p_retx, uint16_t i_seqnum)
 {
-    return (p_hdr[4] << 24) | (p_hdr[5] << 16) | (p_hdr[6] << 8) | p_hdr[7];
+    p_retx[4] = i_seqnum >> 8;
+    p_retx[5] = i_seqnum & 0xff;
 }
 
-static inline uint8_t *rtp_GetPayload( uint8_t *p_hdr )
+static inline uint16_t retx_get_seqnum(const uint8_t *p_retx)
 {
-    unsigned int i_size = RTP_HEADER_SIZE;
-    i_size += 4 * (p_hdr[0] & 0xf);
-    if ( p_hdr[0] & 0x10 ) /* header extension */
-        i_size += 4 * (1 + (p_hdr[i_size + 2] << 8) + p_hdr[i_size + 3]);
-    return p_hdr + i_size;
+    return ((uint16_t)p_retx[4] << 8) | p_retx[5];
 }
 
-static inline void rtp_SetTimestamp( uint8_t *p_hdr, uint32_t i_timestamp )
+static inline void retx_set_num(uint8_t *p_retx, uint16_t i_num)
 {
-    p_hdr[4] = (i_timestamp >> 24) & 0xff;
-    p_hdr[5] = (i_timestamp >> 16) & 0xff;
-    p_hdr[6] = (i_timestamp >> 8) & 0xff;
-    p_hdr[7] = i_timestamp & 0xff;
+    p_retx[6] = i_num >> 8;
+    p_retx[7] = i_num & 0xff;
 }
 
-static inline void rtp_SetSSRC( uint8_t *p_hdr, const uint8_t pi_ssrc[4] )
+static inline uint16_t retx_get_num(const uint8_t *p_retx)
 {
-    p_hdr[8] = pi_ssrc[0];
-    p_hdr[9] = pi_ssrc[1];
-    p_hdr[10] = pi_ssrc[2];
-    p_hdr[11] = pi_ssrc[3];
+    return ((uint16_t)p_retx[6] << 8) | p_retx[7];
 }
-
-static inline void rtp_SetHdr( uint8_t *p_hdr, uint16_t i_rtp_cc )
-{
-    p_hdr[0] = 0x80;
-    p_hdr[1] = 33; /* assume MPEG-2 ts */
-    p_hdr[2] = i_rtp_cc >> 8;
-    p_hdr[3] = i_rtp_cc & 0xff;
-}
-
-/*****************************************************************************
- * Miscellaneous TS handlers
- *****************************************************************************/
-static inline bool ts_CheckSync( const uint8_t *p_ts )
-{
-    return p_ts[0] == 0x47;
-}
-
-static inline uint16_t ts_GetPID( const uint8_t *p_ts )
-{
-    return (((uint16_t)p_ts[1] & 0x1f) << 8) | p_ts[2];
-}
-
-static inline int ts_HasPCR( const uint8_t *p_ts )
-{
-    return ( p_ts[3] & 0x20 ) && /* adaptation field present */
-           ( p_ts[4] >= 7 ) && /* adaptation field size */
-           ( p_ts[5] & 0x10 ); /* has PCR */
-}
-
-static inline uint64_t ts_GetPCR( const uint8_t *p_ts )
-{
-    return ( (uint64_t)p_ts[6] << 25 ) |
-           ( (uint64_t)p_ts[7] << 17 ) |
-           ( (uint64_t)p_ts[8] << 9 ) |
-           ( (uint64_t)p_ts[9] << 1 ) |
-           ( (uint64_t)p_ts[10] >> 7 );
-}
-
-static inline uint64_t ts_GetPCRExt( const uint8_t *p_ts )
-{
-    return (((uint64_t)p_ts[10] & 1) << 8) | (uint64_t)p_ts[11];
-}
-
-static inline void ts_Pad( uint8_t *p_ts )
-{
-    p_ts[0] = 0x47;
-    p_ts[1] = 0x1f;
-    p_ts[2] = 0xff;
-    p_ts[3] = 0x10;
-    memset( p_ts + 4, 0xff, TS_SIZE - 4 );
-};

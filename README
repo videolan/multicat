@@ -24,10 +24,11 @@ necessary for multicat.
 
 OffseTS is another companion application to manipulate auxiliary files.
 Given an offset in time from the beginning of the file, it returns the offset
-of the position in number of packets.
+of the position in number of packets. It is currently deprecated in favour of
+using the -k and -d options of multicat.
 
-Finally aggregaRTP and desaggregaRTP can be used to carry a high-bitrate
-signal over several contribution links.
+Finally aggregaRTP and reordeRTP can be used to carry a high-bitrate
+signal over one or several contribution links.
 
 The multicat suite of applications is very lightweight and designed to
 operate in tight environments. Memory and CPU usages are kept to a minimum,
@@ -63,6 +64,7 @@ Options include:
  /ifaddr=XXX.XXX.XXX.XXX (binds to a specific network interface, by address)
  /ttl=XX (time-to-live of the UDP packet)
  /tos=XX (sets the IPv4 Type Of Service option)
+ /tcp (binds a TCP socket instead of UDP)
 
 Example:
     239.255.0.1:5004/ttl=64
@@ -178,8 +180,8 @@ the multicat program. OffseTS is still distributed for compatibility, but
 doesn't support the new directory input.
 
 
-Using AggregaRTP and DesaggregaRTP
-==================================
+Using AggregaRTP and ReordeRTP
+==============================
 
 Splitting an RTP stream to two streams with different routing policies:
 
@@ -187,4 +189,16 @@ aggregartp @239.255.0.1:5004 239.1.0.1:5004@192.168.0.1 239.2.0.1:5004@172.16.0.
 
 At the other end, reassembling the two streams into one usable stream:
 
-desaggregartp 192.168.0.1@239.1.0.1:5004 172.16.0.1@239.2.0.1:5004 239.254.0.1:5004
+reordertp 192.168.0.1@239.1.0.1:5004 172.16.0.1@239.2.0.1:5004 239.254.0.1:5004
+
+Transmit a signal over a lossy link:
+
+aggregartp @239.255.0.1:5004 239.1.0.1:5004 -X @:5006
+reordertp @239.1.0.1:5004 239.254.0.1:5004 -X 192.168.0.1:5006
+
+The same, but using inverted TCP for retransmission (for NAT traversal for
+instance):
+reordertp @239.1.0.1:5004 239.254.0.1:5004 -X @:5006/tcp
+aggregartp @239.255.0.1:5004 239.1.0.1:5004 -X 192.168.0.2:5006/tcp
+
+(with TCP the listener must be started before the other)
