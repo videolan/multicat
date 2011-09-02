@@ -166,7 +166,7 @@ static void TSHandle( uint8_t *p_ts )
         if ( (POW2_33 * 300 + i_pcr) - i_last_pcr < MAX_PCR_GAP )
             /* Clock wrapped */
             i_last_pcr_diff = POW2_33 * 300 + i_pcr - i_last_pcr;
-        else if ( (i_pcr <= i_last_pcr) ||
+        else if ( (i_pcr < i_last_pcr) ||
                   (i_pcr - i_last_pcr > MAX_PCR_GAP) )
             /* Do not change the slope - consider CBR */
             msg_Warn( NULL, "PCR discontinuity (%llu->%llu, pos=%llu)",

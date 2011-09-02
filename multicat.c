@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -78,10 +79,11 @@ void (*pf_ExitWrite)(void);
 
 static void usage(void)
 {
-    msg_Raw( NULL, "Usage: multicat [-i <RT priority>] [-t <ttl>] [-X] [-f] [-p <PCR PID>] [-s <chunks>] [-n <chunks>] [-k <start time>] [-d <duration>] [-a] [-r <file duration>] [-S <SSRC IP>] [-u] [-U] [-m <payload size>] [-R <RTP header size>] <input item> <output item>" );
+    msg_Raw( NULL, "Usage: multicat [-i <RT priority>] [-t <ttl>] [-X] [-T <file name>] [-f] [-p <PCR PID>] [-s <chunks>] [-n <chunks>] [-k <start time>] [-d <duration>] [-a] [-r <file duration>] [-S <SSRC IP>] [-u] [-U] [-m <payload size>] [-R <RTP header size>] <input item> <output item>" );
     msg_Raw( NULL, "    item format: <file path | device path | FIFO path | directory path | network host>" );
     msg_Raw( NULL, "    host format: [<connect addr>[:<connect port>]][@[<bind addr][:<bind port>]]" );
     msg_Raw( NULL, "    -X: also pass-through all packets to stdout" );
+    msg_Raw( NULL, "    -T: write an XML file with the current characteristics of transmission" );
     msg_Raw( NULL, "    -f: output packets as fast as possible" );
     msg_Raw( NULL, "    -p: overwrite or create RTP timestamps using PCR PID (MPEG-2/TS)" );
     msg_Raw( NULL, "    -s: skip the first N chunks of payload [deprecated]" );
@@ -650,6 +652,7 @@ int main( int i_argc, char **pp_argv )
 {
     int i_priority = -1;
     bool b_passthrough = false;
+    int i_stc_fd = -1;
     off_t i_skip_chunks = 0, i_nb_chunks = -1;
     int64_t i_seek = 0;
     uint64_t i_duration = 0;
@@ -661,7 +664,7 @@ int main( int i_argc, char **pp_argv )
     sigset_t set;
 
     /* Parse options */
-    while ( (c = getopt( i_argc, pp_argv, "i:t:Xfp:s:n:k:d:ar:S:uUm:R:h" )) != -1 )
+    while ( (c = getopt( i_argc, pp_argv, "i:t:XT:fp:s:n:k:d:ar:S:uUm:R:h" )) != -1 )
     {
         switch ( c )
         {
@@ -675,6 +678,13 @@ int main( int i_argc, char **pp_argv )
 
         case 'X':
             b_passthrough = true;
+            break;
+
+        case 'T':
+            i_stc_fd = open( optarg, O_WRONLY | O_CREAT | O_TRUNC, 0644 );
+            if ( i_stc_fd < 0 )
+                msg_Warn( NULL, "unable to open %s (%s)\n", optarg,
+                          strerror(errno) );
             break;
 
         case 'f':
@@ -934,6 +944,18 @@ int main( int i_argc, char **pp_argv )
             if ( write( STDOUT_FILENO, p_write_buffer, i_write_size )
                   != i_write_size )
                 msg_Warn( NULL, "write(stdout) error (%s)", strerror(errno) );
+
+        if ( i_stc_fd != -1 )
+        {
+            char psz_stc[256];
+            size_t i_len = sprintf( psz_stc, "<?xml version=\"1.0\" encoding=\"utf-8\"?><MULTICAT><STC value=\"%"PRIu64"\"/></MULTICAT>", i_stc );
+            memset( psz_stc + i_len, '\n', sizeof(psz_stc) - i_len );
+            if ( lseek( i_stc_fd, 0, SEEK_SET ) == (off_t)-1 )
+                msg_Warn( NULL, "lseek date file failed (%s)",
+                          strerror(errno) );
+            if ( write( i_stc_fd, psz_stc, sizeof(psz_stc) ) != sizeof(psz_stc) )
+                msg_Warn( NULL, "write date file error (%s)", strerror(errno) );
+        }
 
         if ( i_nb_chunks > 0 )
             i_nb_chunks--;
