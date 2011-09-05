@@ -41,4 +41,7 @@ if test $NB_CHUNKS -gt $WANTED_CHUNKS; then
 	ls -t *.ts | tail -n $(($WANTED_CHUNKS-$NB_CHUNKS)) | cut -d. -f 1 | xargs -I FILE sh -c "rm FILE.ts FILE.aux*"
 fi
 
-ls -t *.ts | tail -n 1 | cut -d. -f 1
+FILES=`find . -name \*.ts -size +7 -print`
+if test -n "$FILES"; then
+	ls -t $FILES | tail -n 1 | xargs basename | cut -d. -f 1
+fi
