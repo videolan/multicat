@@ -243,7 +243,7 @@ int main( int i_argc, char **pp_argv )
     bool b_udp = false;
     struct pollfd pfd[2];
 
-    while ( (c = getopt( i_argc, pp_argv, "i:t:wo:X:Um:R:h" )) != -1 )
+    while ( (c = getopt( i_argc, pp_argv, "i:t:wo:x:X:Um:R:h" )) != -1 )
     {
         switch ( c )
         {
@@ -268,6 +268,10 @@ int main( int i_argc, char **pp_argv )
             b_overwrite_ssrc = true;
             break;
         }
+
+        case 'x':
+            i_retx_buffer = strtoll( optarg, NULL, 0 ) * 27000;
+            break;
 
         case 'X':
             i_retx_fd = OpenSocket( optarg, 0, 0, 0, NULL, &b_retx_tcp );
