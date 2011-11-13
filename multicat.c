@@ -48,6 +48,7 @@
 #include "util.h"
 
 #define POLL_TIMEOUT 1000 /* 1 s */
+#define MAX_LATENESS 27000000LL /* 1 s */
 
 /*****************************************************************************
  * Local declarations
@@ -72,7 +73,7 @@ static uint64_t i_pcr = 0, i_pcr_stc = 0; /* for RTP/TS output */
 uint64_t (*pf_Date)(void) = wall_Date;
 void (*pf_Sleep)( uint64_t ) = wall_Sleep;
 ssize_t (*pf_Read)( void *p_buf, size_t i_len );
-void (*pf_Delay)(void) = NULL;
+bool (*pf_Delay)(void) = NULL;
 void (*pf_ExitRead)(void);
 ssize_t (*pf_Write)( const void *p_buf, size_t i_len );
 void (*pf_ExitWrite)(void);
@@ -375,7 +376,7 @@ static ssize_t file_Read( void *p_buf, size_t i_len )
     return i_ret;
 }
 
-static void file_Delay(void)
+static bool file_Delay(void)
 {
     /* for correct throughput without rounding approximations */
     static uint64_t i_file_first_stc = 0, i_file_first_wall = 0;
@@ -386,8 +387,20 @@ static void file_Delay(void)
         i_file_first_wall = i_wall;
         i_file_first_stc = i_stc;
     }
-    else if ( (i_stc - i_file_first_stc) > (i_wall - i_file_first_wall) )
-        pf_Sleep( (i_stc - i_file_first_stc) - (i_wall - i_file_first_wall) );
+    else
+    {
+        int64_t i_delay = (i_stc - i_file_first_stc) -
+                          (i_wall - i_file_first_wall);
+        if ( i_delay > 0 )
+            pf_Sleep( i_delay );
+        else if ( i_delay < -MAX_LATENESS )
+        {
+            msg_Warn( NULL, "too much lateness, resetting clocks" );
+            i_file_first_wall = i_wall;
+            i_file_first_stc = i_stc;
+        }
+    }
+    return true;
 }
 
 static void file_ExitRead(void)
@@ -498,12 +511,19 @@ try_again:
     return i_ret;
 }
 
-static void dir_Delay(void)
+static bool dir_Delay(void)
 {
     uint64_t i_wall = pf_Date() - i_input_dir_delay;
+    int64_t i_delay = i_stc - i_wall;
 
-    if ( i_stc > i_wall )
-        pf_Sleep( i_stc - i_wall );
+    if ( i_delay > 0 )
+        pf_Sleep( i_delay );
+    else if ( i_delay < -MAX_LATENESS )
+    {
+        msg_Warn( NULL, "dropping late packet" );
+        return false;
+    }
+    return true;
 }
 
 static void dir_ExitRead(void)
@@ -865,7 +885,8 @@ int main( int i_argc, char **pp_argv )
         if ( i_read_size <= 0 ) continue;
 
         if ( b_sleep && pf_Delay != NULL)
-            pf_Delay();
+            if (!pf_Delay())
+                goto dropped_packet;
 
         /* Determine start and size of payload */
         if ( !b_input_udp )
@@ -945,6 +966,7 @@ int main( int i_argc, char **pp_argv )
                   != i_write_size )
                 msg_Warn( NULL, "write(stdout) error (%s)", strerror(errno) );
 
+dropped_packet:
         if ( i_stc_fd != -1 )
         {
             char psz_stc[256];
