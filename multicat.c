@@ -49,6 +49,7 @@
 
 #define POLL_TIMEOUT 1000 /* 1 s */
 #define MAX_LATENESS 27000000LL /* 1 s */
+#define FILE_FLUSH 27000000LL /* 1 s */
 
 /*****************************************************************************
  * Local declarations
@@ -321,8 +322,11 @@ static int stream_InitRead( const char *psz_arg, size_t i_len,
 static ssize_t stream_Write( const void *p_buf, size_t i_len )
 {
     ssize_t i_ret;
+retry:
     if ( (i_ret = write( i_output_fd, p_buf, i_len )) < 0 )
     {
+        if (errno == EAGAIN || errno == EINTR)
+            goto retry;
         msg_Err( NULL, "write error (%s)", strerror(errno) );
         b_die = 1;
     }
@@ -346,6 +350,8 @@ static int stream_InitWrite( const char *psz_arg, size_t i_len, bool b_append )
 /*****************************************************************************
  * file_*: handler for the auxiliary file format
  *****************************************************************************/
+static uint64_t i_file_next_flush = 0;
+
 static ssize_t file_Read( void *p_buf, size_t i_len )
 {
     uint8_t p_aux[8];
@@ -453,6 +459,13 @@ static ssize_t file_Write( const void *p_buf, size_t i_len )
     {
         msg_Err( NULL, "couldn't write to auxiliary file" );
         b_die = 1;
+    }
+    if (!i_file_next_flush)
+        i_file_next_flush = i_stc + FILE_FLUSH;
+    else if (i_file_next_flush <= i_stc)
+    {
+        fflush( p_output_aux );
+        i_file_next_flush = i_stc + FILE_FLUSH;
     }
 
     return i_ret;
