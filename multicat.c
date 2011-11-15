@@ -480,6 +480,8 @@ static void file_ExitWrite(void)
 static int file_InitWrite( const char *psz_arg, size_t i_len, bool b_append )
 {
     char *psz_aux_file = GetAuxFile( psz_arg, i_len );
+    if ( b_append )
+        CheckFileSizes( psz_arg, psz_aux_file, i_len );
     i_output_fd = OpenFile( psz_arg, false, b_append );
     p_output_aux = OpenAuxFile( psz_aux_file, false, b_append );
     free( psz_aux_file );

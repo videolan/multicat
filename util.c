@@ -868,6 +868,57 @@ off_t LookupAuxFile( const char *psz_arg, int64_t i_wanted, bool b_absolute )
 }
 
 /*****************************************************************************
+ * CheckFileSizes: check the consistency of file and aux sizes
+ *****************************************************************************/
+void CheckFileSizes( const char *psz_file, const char *psz_aux_file,
+                     size_t i_payload_size )
+{
+    struct stat st;
+    off_t i_file_packets, i_aux_packets;
+
+    if ( stat( psz_file, &st ) < 0 )
+        i_file_packets = 0;
+    else
+    {
+        i_file_packets = st.st_size / i_payload_size;
+        if ( st.st_size % i_payload_size )
+        {
+            msg_Warn( NULL, "file size is not a multiple of %jd, truncating",
+                      i_payload_size );
+            if ( truncate( psz_file, i_file_packets * i_payload_size ) < 0 )
+                msg_Err( NULL, "truncate failed (%s)", strerror(errno) );
+        }
+    }
+
+    if ( stat( psz_aux_file, &st ) < 0 )
+        i_aux_packets = 0;
+    else
+    {
+        i_aux_packets = st.st_size / sizeof(uint64_t);
+        if ( st.st_size % sizeof(uint64_t) )
+        {
+            msg_Warn( NULL, "aux size is not a multiple of %jd, truncating",
+                      sizeof(uint64_t) );
+            if ( truncate( psz_aux_file, i_aux_packets * sizeof(uint64_t) ) < 0 )
+                msg_Err( NULL, "truncate failed (%s)", strerror(errno) );
+        }
+    }
+
+    if ( i_file_packets < i_aux_packets )
+    {
+        msg_Warn( NULL, "truncating aux file" );
+        if ( truncate( psz_aux_file, i_file_packets * sizeof(uint64_t) ) < 0 )
+            msg_Err( NULL, "truncate failed (%s)", strerror(errno) );
+    }
+    else if ( i_aux_packets < i_file_packets )
+    {
+        msg_Warn( NULL, "truncating file" );
+        if ( truncate( psz_file, i_aux_packets * i_payload_size ) < 0 )
+            msg_Err( NULL, "truncate failed (%s)", strerror(errno) );
+    }
+}
+
+/*****************************************************************************
  * GetDirFile: return the prefix of the file according to the STC
  *****************************************************************************/
 uint64_t GetDirFile( uint64_t i_rotate_size, int64_t i_wanted )
@@ -889,12 +940,21 @@ int OpenDirFile( const char *psz_dir_path, uint64_t i_file, bool b_read,
     int i_fd;
     char psz_file[strlen(psz_dir_path) + sizeof(PSZ_TS_EXT) +
                   sizeof(".18446744073709551615")];
+    char *psz_aux_file;
+
     sprintf( psz_file, "%s/%"PRIu64"."PSZ_TS_EXT, psz_dir_path, i_file );
+    psz_aux_file = GetAuxFile( psz_file, i_payload_size );
+
+    if ( !b_read )
+        CheckFileSizes( psz_file, psz_aux_file, i_payload_size );
 
     i_fd = OpenFile( psz_file, b_read, !b_read );
-    if ( i_fd < 0 ) return -1;
+    if ( i_fd < 0 )
+    {
+        free( psz_aux_file );
+        return -1;
+    }
 
-    char *psz_aux_file = GetAuxFile( psz_file, i_payload_size );
     *pp_aux_file = OpenAuxFile( psz_aux_file, b_read, !b_read );
     free( psz_aux_file );
     if ( *pp_aux_file == NULL )

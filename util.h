@@ -52,6 +52,8 @@ int OpenFile( const char *psz_arg, bool b_read, bool b_append );
 char *GetAuxFile( const char *psz_arg, size_t i_payload_size );
 FILE *OpenAuxFile( const char *psz_arg, bool b_read, bool b_append );
 off_t LookupAuxFile( const char *psz_arg, int64_t i_wanted, bool b_absolute );
+void CheckFileSizes( const char *psz_file, const char *psz_aux_file,
+                     size_t i_payload_size );
 uint64_t GetDirFile( uint64_t i_rotate_size, int64_t i_wanted );
 int OpenDirFile( const char *psz_dir_path, uint64_t i_file, bool b_read,
                  size_t i_payload_size, FILE **pp_aux_file );
