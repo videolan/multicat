@@ -2,7 +2,7 @@
  * aggregartp.c: split an RTP stream for several contribution links
  *****************************************************************************
  * Copyright (C) 2009, 2011 VideoLAN
- * $Id: aggregartp.c 48 2007-11-30 14:08:21Z cmassiot $
+ * $Id$
  *
  * Authors: Christophe Massiot <massiot@via.ecp.fr>
  *

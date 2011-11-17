@@ -2,7 +2,7 @@
  * multicat.c: netcat-equivalent for multicast
  *****************************************************************************
  * Copyright (C) 2009, 2011 VideoLAN
- * $Id: multicat.c 48 2007-11-30 14:08:21Z cmassiot $
+ * $Id$
  *
  * Authors: Christophe Massiot <massiot@via.ecp.fr>
  *
@@ -612,7 +612,7 @@ static uint64_t i_output_dir_file;
 static ssize_t dir_Write( const void *p_buf, size_t i_len )
 {
     uint64_t i_dir_file = GetDirFile( i_rotate_size, i_stc );
-    if ( i_dir_file != i_output_dir_file )
+    if ( !i_output_fd || i_dir_file != i_output_dir_file )
     {
         if ( i_output_fd )
         {

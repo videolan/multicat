@@ -1,4 +1,4 @@
-$Id: NEWS 194 2011-07-13 19:59:32Z massiot $
+$Id$
 
 Changes between 1.0 and 2.0:
 ----------------------------
@@ -6,6 +6,8 @@ Changes between 1.0 and 2.0:
     "chunks" of fixed duration, accompanied with their auxiliary file
   * Support for TCP sockets in multicat, aggregartp and reordertp (/tcp)
   * Merge OffseTS functionality into multicat itself (-k and -d)
+  * New program multicat_validate to validate directory inputs
+  * New program lasts to determine the duration of an aux file
   * Support for IPv6
   * Add DVBlast-style options for host parsing (ifindex, ifaddr, ttl and tos)
   * Add the ability to output a stream as fast as possible (-f)

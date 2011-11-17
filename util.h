@@ -2,7 +2,7 @@
  * util.h: Utils for the multicat suite
  *****************************************************************************
  * Copyright (C) 2009, 2011 VideoLAN
- * $Id: multicat.h 65 2009-11-15 22:57:53Z massiot $
+ * $Id$
  *
  * Authors: Christophe Massiot <massiot@via.ecp.fr>
  *

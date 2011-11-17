@@ -2,7 +2,7 @@
  * reordertp.c: rebuild an RTP stream from several aggregated links
  *****************************************************************************
  * Copyright (C) 2009, 2011 VideoLAN
- * $Id: reordertp.c 48 2007-11-30 14:08:21Z cmassiot $
+ * $Id$
  *
  * Authors: Christophe Massiot <massiot@via.ecp.fr>
  *

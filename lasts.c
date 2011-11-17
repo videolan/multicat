@@ -2,7 +2,7 @@
  * lasts.c: give the duration of an aux file
  *****************************************************************************
  * Copyright (C) 2009, 2011 VideoLAN
- * $Id: lasts.c 10 2005-11-16 18:09:00Z cmassiot $
+ * $Id$
  *
  * Authors: Christophe Massiot <massiot@via.ecp.fr>
  *

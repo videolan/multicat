@@ -2,7 +2,7 @@
  * ingests.c: create the aux file for a transport stream file
  *****************************************************************************
  * Copyright (C) 2009, 2011 VideoLAN
- * $Id: ingests.c 52 2009-10-06 16:48:00Z cmassiot $
+ * $Id$
  *
  * Authors: Christophe Massiot <massiot@via.ecp.fr>
  *
