@@ -48,8 +48,8 @@
 #include "util.h"
 
 #define POLL_TIMEOUT 1000 /* 1 s */
-#define MAX_LATENESS 27000000LL /* 1 s */
-#define FILE_FLUSH 27000000LL /* 1 s */
+#define MAX_LATENESS INT64_C(27000000) /* 1 s */
+#define FILE_FLUSH INT64_C(27000000) /* 1 s */
 
 /*****************************************************************************
  * Local declarations

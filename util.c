@@ -335,7 +335,7 @@ static struct addrinfo *ParseNodeService( char *_psz_string, char **ppsz_end,
     hint.ai_socktype = SOCK_DGRAM;
     hint.ai_protocol = 0;
     hint.ai_flags = AI_PASSIVE | AI_NUMERICHOST | AI_NUMERICSERV | AI_ADDRCONFIG;
-    if ( (i_ret = getaddrinfo( psz_node, psz_port, NULL, &p_res )) != 0 )
+    if ( (i_ret = getaddrinfo( psz_node, psz_port, &hint, &p_res )) != 0 )
     {
         //msg_Warn( NULL, "getaddrinfo error: %s", gai_strerror(i_ret) );
         free( psz_string );
