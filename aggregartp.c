@@ -46,6 +46,12 @@
 /*****************************************************************************
  * Local declarations
  *****************************************************************************/
+typedef union
+{
+    struct sockaddr_storage ss;
+    struct sockaddr so;
+} sockaddr_t;
+
 typedef struct block_t
 {
     uint8_t *p_data;
@@ -122,11 +128,11 @@ static output_t *NextOutput(void)
 /*****************************************************************************
  * SendBlock: send a block to a file descriptor
  *****************************************************************************/
-static void SendBlock( int i_fd, struct sockaddr_storage *p_sout,
+static void SendBlock( int i_fd, struct sockaddr *p_sout,
                        socklen_t i_len, block_t *p_block )
 {
-    if ( sendto( i_fd, p_block->p_data, p_block->i_size, 0,
-                 (struct sockaddr *)p_sout, i_len ) < 0 )
+    if ( sendto( i_fd, p_block->p_data, p_block->i_size, 0, p_sout, i_len )
+          < 0 )
     {
         if ( errno == EBADF || errno == ECONNRESET || errno == EPIPE )
         {
@@ -174,11 +180,10 @@ static void RetxHandle(void)
 {
     ssize_t i_size = RETX_HEADER_SIZE - p_retx_block->i_size;
     uint8_t *p_buffer = p_retx_block->p_data + p_retx_block->i_size;
-    struct sockaddr_storage sout;
+    sockaddr_t sout;
     socklen_t i_len = sizeof(sout);
 
-    i_size = recvfrom( i_retx_fd, p_buffer, i_size, 0,
-                       (struct sockaddr *)&sout, &i_len );
+    i_size = recvfrom( i_retx_fd, p_buffer, i_size, 0, &sout.so, &i_len );
     if ( i_size < 0 && errno != EAGAIN && errno != EINTR )
     {
         msg_Err( NULL, "unrecoverable read error, dying (%s)",
@@ -222,7 +227,7 @@ static void RetxHandle(void)
 
     while ( i_num && p_block != NULL )
     {
-        SendBlock( i_retx_fd, i_len ? &sout : NULL, i_len, p_block );
+        SendBlock( i_retx_fd, i_len ? &sout.so : NULL, i_len, p_block );
         p_block = p_block->p_next;
         i_num--;
     }
