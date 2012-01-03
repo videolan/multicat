@@ -1,6 +1,7 @@
 # multicat Makefile
 
-CFLAGS += -Wall -O3 -fomit-frame-pointer -D_FILE_OFFSET_BITS=64 -D_ISOC99_SOURCE -D_BSD_SOURCE
+VERSION = 2.0
+CFLAGS += -Wall -Wformat-security -O3 -fomit-frame-pointer -D_FILE_OFFSET_BITS=64 -D_ISOC99_SOURCE -D_BSD_SOURCE
 CFLAGS += -g
 LDLIBS += -lrt
 
@@ -59,3 +60,10 @@ install: all
 uninstall:
 	@rm $(BIN)/multicat $(BIN)/ingests $(BIN)/aggregartp $(BIN)/reordertp $(BIN)/offsets $(BIN)/lasts $(BIN)/multicat_validate
 	@rm $(MAN)/multicat.1 $(MAN)/ingests.1 $(MAN)/aggregartp.1 $(MAN)/reordertp.1 $(MAN)/offsets.1 $(MAN)/lasts.1
+
+dist:
+	svn export svn://svn.videolan.org/multicat/trunk multicat-$(VERSION)
+	tar cf - multicat-$(VERSION) | bzip2 -9 > multicat-$(VERSION).tar.bz2
+	-rm -rf multicat-$(VERSION)
+	ls -l multicat-$(VERSION).tar.bz2
+

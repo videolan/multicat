@@ -27,6 +27,9 @@ Given an offset in time from the beginning of the file, it returns the offset
 of the position in number of packets. It is currently deprecated in favour of
 using the -k and -d options of multicat.
 
+LasTS is also a companion application which gives the total duration of an
+auxiliary file.
+
 Finally aggregaRTP and reordeRTP can be used to carry a high-bitrate
 signal over one or several contribution links.
 
