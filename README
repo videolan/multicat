@@ -9,7 +9,8 @@ Transport Streams (ISO/IEC 13818-1) in particular.
 
 The multicat tool itself is a 1 input/1 output application. Inputs and
 outputs can be network streams (unicast and multicast, IPv4 and IPv6), files,
-directories, character devices or FIFOs.
+directories, character devices or FIFOs. Typical applications are recording
+live transport streams, or playing out TS files without modification.
 
 Multicat tries to rebuild the internal clock of the input stream; but
 it wants to remain agnostic of what is transported, so in case of files
@@ -31,7 +32,10 @@ LasTS is also a companion application which gives the total duration of an
 auxiliary file.
 
 Finally aggregaRTP and reordeRTP can be used to carry a high-bitrate
-signal over one or several contribution links.
+signal over one or several contribution links, and support retransmission
+of lost packets via an additional UDP or TCP connection. ReordeRTP can also
+smooth up the reception of a stream from a link that is known to reorder
+and add jitter to packets.
 
 The multicat suite of applications is very lightweight and designed to
 operate in tight environments. Memory and CPU usages are kept to a minimum,
