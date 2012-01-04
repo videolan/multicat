@@ -1,7 +1,25 @@
 $Id$
 
-Installing Multicat
+Getting multicat
+================
+
+Offically released multicat versions can be downloaded at:
+ftp://ftp.videolan.org/pub/videolan/multicat/
+
+Multicat is developed using svn. To get the latest version checkout
+the repository at: svn://svn.videolan.org/multicat/trunk
+
+Installing multicat
 ===================
 
-No autotools yet... You'd have to tweak the Makefile by hand. Compile the
-program with `make`. and install with `make install`.
+Compile the program with `make` and install with `make install`.
+
+Multicat 2.X uses the biTStream package at build-time. No runtime library is
+needed.
+
+To install biTStream, clone git repository and run `make install`.
+
+    git clone git://git.videolan.org/bitstream.git
+    cd bitstream
+    make install
+
