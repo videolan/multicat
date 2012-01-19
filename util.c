@@ -45,6 +45,8 @@
 
 #include "util.h"
 
+#undef DEBUG_SOCKET
+
 /*****************************************************************************
  * Local declarations
  *****************************************************************************/
@@ -339,6 +341,35 @@ static struct addrinfo *ParseNodeService( char *_psz_string, char **ppsz_end,
     if ( psz_node[0] == '\0' )
         psz_node = "0.0.0.0";
 
+    if ( i_family != AF_INET6 )
+    {
+        /* Give a try to inet_aton because experience shows that getaddrinfo()
+         * fails in certain cases, like when network is down. */
+        struct in_addr addr;
+        if ( inet_aton( psz_node, &addr ) != 0 )
+        {
+            struct sockaddr_in *p_sin = malloc( sizeof(struct sockaddr_in) );
+            p_sin->sin_family = AF_INET;
+            if ( psz_port != NULL )
+                p_sin->sin_port = ntohs( atoi( psz_port ) );
+            else
+                p_sin->sin_port = 0;
+            p_sin->sin_addr = addr;
+
+            p_res = malloc( sizeof(struct addrinfo) );
+            p_res->ai_family = AF_INET;
+            p_res->ai_socktype = SOCK_DGRAM;
+            p_res->ai_protocol = 0;
+            p_res->ai_addrlen = sizeof(struct sockaddr_in);
+            p_res->ai_addr = (struct sockaddr *)p_sin;
+            p_res->ai_canonname = NULL;
+            p_res->ai_next = NULL;
+
+            free( psz_string );
+            return p_res;
+        }
+    }
+
     memset( &hint, 0, sizeof(hint) );
     hint.ai_family = i_family;
     hint.ai_socktype = SOCK_DGRAM;
@@ -423,6 +454,10 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
     if ( bind_addr.ss.ss_family == AF_UNSPEC &&
          connect_addr.ss.ss_family == AF_UNSPEC )
         return -1;
+
+#ifdef DEBUG_SOCKET
+    PrintSocket( "socket definition:", &bind_addr, &connect_addr );
+#endif
 
     /* Weights and options */
     if ( psz_token2 )
