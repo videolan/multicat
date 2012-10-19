@@ -1,7 +1,7 @@
 /*****************************************************************************
  * multicat.c: netcat-equivalent for multicast
  *****************************************************************************
- * Copyright (C) 2009, 2011 VideoLAN
+ * Copyright (C) 2009, 2011-2012 VideoLAN
  * $Id$
  *
  * Authors: Christophe Massiot <massiot@via.ecp.fr>
@@ -41,12 +41,22 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 #include <poll.h>
+#include <sys/ioctl.h>
+
+#ifdef SIOCGSTAMPNS
+#   define HAVE_TIMESTAMPS
+#endif
+
+#ifndef POLLRDHUP
+#   define POLLRDHUP 0
+#endif
 
 #include <bitstream/ietf/rtp.h>
 #include <bitstream/mpeg/ts.h>
 
 #include "util.h"
 
+#undef DEBUG_WRITEBACK
 #define POLL_TIMEOUT 1000 /* 1 s */
 #define MAX_LATENESS INT64_C(27000000) /* 1 s */
 #define FILE_FLUSH INT64_C(27000000) /* 1 s */
@@ -200,6 +210,12 @@ static ssize_t udp_Read( void *p_buf, size_t i_len )
             return 0;
         }
 
+#ifdef HAVE_TIMESTAMPS
+        struct timespec ts;
+        if ( !ioctl( i_input_fd, SIOCGSTAMPNS, &ts ) )
+            i_stc = ts.tv_sec * UINT64_C(27000000) + ts.tv_nsec * 27 / 1000;
+        else
+#endif
         i_stc = pf_Date();
     }
     else
@@ -231,6 +247,10 @@ static int udp_InitRead( const char *psz_arg, size_t i_len,
 
     pf_Read = udp_Read;
     pf_ExitRead = udp_ExitRead;
+#ifdef HAVE_TIMESTAMPS
+    if ( !b_tcp )
+        pf_Date = real_Date;
+#endif
     return 0;
 }
 
@@ -446,13 +466,21 @@ static ssize_t file_Write( const void *p_buf, size_t i_len )
 {
     uint8_t p_aux[8];
     ssize_t i_ret;
+#ifdef DEBUG_WRITEBACK
+    uint64_t start = pf_Date(), end;
+#endif
 
     if ( (i_ret = write( i_output_fd, p_buf, i_len )) < 0 )
     {
-        msg_Err( NULL, "couldn't write to file" );
+        msg_Err( NULL, "couldn't write to file (%s)", strerror(errno) );
         b_die = 1;
         return i_ret;
     }
+#ifdef DEBUG_WRITEBACK
+    end = pf_Date();
+    if (end - start > 270000) /* 10 ms */
+        msg_Err(NULL, "too long waiting in write(%"PRId64")", (end - start) / 27000);
+#endif
 
     ToSTC( p_aux, i_stc );
     if ( fwrite( p_aux, 8, 1, p_output_aux ) != 1 )
