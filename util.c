@@ -150,7 +150,7 @@ static uint64_t _wall_Date( bool b_realtime )
     struct timespec ts;
 
     /* Try to use POSIX monotonic clock if available */
-    if( b_realtime || clock_gettime( CLOCK_MONOTONIC, &ts ) == EINVAL )
+    if( b_realtime || clock_gettime( CLOCK_MONOTONIC, &ts ) == -1 )
         /* Run-time fallback to real-time clock (always available) */
         (void)clock_gettime( CLOCK_REALTIME, &ts );
 
@@ -216,6 +216,7 @@ void real_Sleep( uint64_t i_delay )
  *****************************************************************************/
 static int GetInterfaceIndex( const char *psz_name )
 {
+#ifndef __FreeBSD__
     int i_fd;
     struct ifreq ifr;
 
@@ -237,6 +238,9 @@ static int GetInterfaceIndex( const char *psz_name )
     close( i_fd );
 
     return ifr.ifr_ifindex;
+#else
+    return 0;
+#endif
 }
 
 /*****************************************************************************
@@ -603,6 +607,7 @@ normal_bind:
         if ( bind_addr.ss.ss_family == AF_INET
               && IN_MULTICAST( ntohl(bind_addr.sin.sin_addr.s_addr)) )
         {
+#ifdef IP_ADD_SOURCE_MEMBERSHIP /* unavailable on GNU Hurd */
             if ( connect_addr.ss.ss_family != AF_UNSPEC )
             {
                 /* Source-specific multicast */
@@ -615,13 +620,18 @@ normal_bind:
 
                 if ( setsockopt( i_fd, IPPROTO_IP, IP_ADD_SOURCE_MEMBERSHIP,
                             (char *)&imr, sizeof(struct ip_mreq_source) ) < 0 )
+                {
                     msg_Err( NULL, "couldn't join multicast group (%s)",
                              strerror(errno) );
                     PrintSocket( "socket definition:", &bind_addr,
                                  &connect_addr );
                     exit(EXIT_FAILURE);
+                }
             }
-            else if ( i_bind_if_index )
+            else
+#endif
+#ifndef __FreeBSD__
+            if ( i_bind_if_index )
             {
                 /* Linux-specific interface-bound multicast */
                 struct ip_mreqn imr;
@@ -631,13 +641,16 @@ normal_bind:
 
                 if ( setsockopt( i_fd, IPPROTO_IP, IP_ADD_MEMBERSHIP,
                                  (char *)&imr, sizeof(struct ip_mreqn) ) < 0 )
+                {
                     msg_Err( NULL, "couldn't join multicast group (%s)",
                              strerror(errno) );
                     PrintSocket( "socket definition:", &bind_addr,
                                  &connect_addr );
                     exit(EXIT_FAILURE);
+                }
             }
             else
+#endif
             {
                 /* Regular multicast */
                 struct ip_mreq imr;
