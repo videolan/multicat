@@ -45,7 +45,7 @@
 
 #include "util.h"
 
-#undef DEBUG_SOCKET
+#define DEBUG_SOCKET
 
 /*****************************************************************************
  * Local declarations
@@ -391,10 +391,80 @@ static struct addrinfo *ParseNodeService( char *_psz_string, char **ppsz_end,
 }
 
 /*****************************************************************************
+ * RawFillHeaders - fill ip/udp headers for RAW socket
+ *****************************************************************************/
+static void RawFillHeaders(struct udprawpkt *dgram,
+                        in_addr_t ipsrc, in_addr_t ipdst,
+                        uint16_t portsrc, uint16_t portdst,
+                        uint8_t ttl, uint8_t tos, uint16_t len)
+{
+    struct iphdr *iph = &(dgram->iph);
+    struct udphdr *udph = &(dgram->udph);
+
+#ifdef DEBUG_SOCKET
+    char ipsrc_str[16], ipdst_str[16];
+    struct in_addr insrc, indst;
+    insrc.s_addr = ipsrc;
+    indst.s_addr = ipdst;
+    strncpy(ipsrc_str, inet_ntoa(insrc), 16);
+    strncpy(ipdst_str, inet_ntoa(indst), 16);
+    printf("Filling raw header (%p) (%s:%u -> %s:%u)\n", dgram, ipsrc_str, portsrc, ipdst_str, portdst);
+#endif
+
+    // Fill ip header
+    iph->ihl      = 5;              // ip header with no specific option
+    iph->version  = 4;
+    iph->tos      = tos;
+    iph->tot_len  = sizeof(struct udprawpkt) + len; // auto-htoned ?
+    iph->id       = htons(0);       // auto-generated if frag_off (flags) = 0 ?
+    iph->frag_off = 0;
+    iph->ttl      = ttl;
+    iph->protocol = IPPROTO_UDP;
+    iph->check    = 0;
+    iph->saddr    = ipsrc;
+    iph->daddr    = ipdst;
+
+    // Fill udp header
+    #ifdef __FAVOR_BSD
+    udph->uh_sport = htons(portsrc);
+    udph->uh_dport = htons(portdst);
+    udph->uh_ulen  = htons(sizeof(struct udphdr) + len);
+    udph->uh_sum   = 0;
+    #else
+    udph->source = htons(portsrc);
+    udph->dest   = htons(portdst);
+    udph->len    = htons(sizeof(struct udphdr) + len);
+    udph->check  = 0;
+    #endif
+
+    // Compute ip header checksum. Computed by kernel when frag_off = 0 ?
+    //iph->check = csum((unsigned short *)iph, sizeof(struct iphdr));
+}
+
+/*****************************************************************************
  * OpenSocket: parse argv and open IPv4 & IPv6 sockets
  *****************************************************************************/
+static char *config_stropt( char *psz_string )
+{
+    char *ret, *tmp;
+    if ( !psz_string || strlen( psz_string ) == 0 )
+        return NULL;
+    ret = tmp = strdup( psz_string );
+    while (*tmp) {
+        if (*tmp == '_')
+            *tmp = ' ';
+        if (*tmp == '/') {
+            *tmp = '\0';
+            break;
+        }
+        tmp++;
+    }
+    return ret;
+}
+
 int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
-                uint16_t i_connect_port, unsigned int *pi_weight, bool *pb_tcp )
+                uint16_t i_connect_port, unsigned int *pi_weight, bool *pb_tcp,
+                struct opensocket_opt *p_opt)
 {
     sockaddr_t bind_addr, connect_addr;
     int i_fd, i;
@@ -408,6 +478,10 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
     struct addrinfo *p_ai;
     int i_family;
     socklen_t i_sockaddr_len;
+    bool b_host = false;
+    bool b_raw_packets = false;
+    in_addr_t i_raw_srcaddr = INADDR_ANY; 
+    int i_raw_srcport = 0;
 
     bind_addr.ss.ss_family = AF_UNSPEC;
     connect_addr.ss.ss_family = AF_UNSPEC;
@@ -436,6 +510,7 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
     /* Hosts */
     if ( psz_token[0] != '@' )
     {
+        b_host = true;
         p_ai = ParseNodeService( psz_token, &psz_token, i_connect_port,
                                  &i_connect_if_index );
         if ( p_ai == NULL )
@@ -462,6 +537,13 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
 #ifdef DEBUG_SOCKET
     PrintSocket( "socket definition:", &bind_addr, &connect_addr );
 #endif
+    /* opensocket optional struct */
+    if (p_opt) {
+        if (p_opt->p_raw_pktheader) {
+            memset(p_opt->p_raw_pktheader, 0, sizeof(struct udprawpkt));
+            b_raw_packets = true;
+        }
+    }
 
     /* Weights and options */
     if ( psz_token2 )
@@ -477,13 +559,25 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
                 i_bind_if_index = i_connect_if_index =
                     strtol( ARG_OPTION("ifindex="), NULL, 0 );
             else if ( IS_OPTION("ifaddr=") )
+            {
+                char *option = config_stropt( ARG_OPTION("ifaddr=") );
                 i_if_addr = inet_addr( ARG_OPTION("ifaddr=") );
+                free( option );
+            }
             else if ( IS_OPTION("ttl=") )
                 i_ttl = strtol( ARG_OPTION("ttl="), NULL, 0 );
             else if ( IS_OPTION("tos=") )
                 i_tos = strtol( ARG_OPTION("tos="), NULL, 0 );
             else if ( IS_OPTION("tcp") )
                 *pb_tcp = true;
+            else if ( IS_OPTION("srcaddr=") )
+            {
+                char *option = config_stropt( ARG_OPTION("srcaddr=") );
+                i_raw_srcaddr = inet_addr( option );
+                free( option );
+            }
+            else if ( IS_OPTION("srcport=") )
+                i_raw_srcport = strtol( ARG_OPTION("srcport="), NULL, 0 );
             else
                 msg_Warn( NULL, "unrecognized option %s", psz_token2 );
 
@@ -525,8 +619,15 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
     else i_connect_if_index = i_bind_if_index;
 
     /* Socket configuration */
-    if ( (i_fd = socket( i_family, *pb_tcp ? SOCK_STREAM : SOCK_DGRAM,
-                         0 )) < 0 )
+    if (b_raw_packets && b_host) { 
+        RawFillHeaders(p_opt->p_raw_pktheader,
+            i_raw_srcaddr, connect_addr.sin.sin_addr.s_addr, i_raw_srcport,
+            ntohs(connect_addr.sin.sin_port), i_ttl, i_tos, 0);
+        i_fd = socket( AF_INET, SOCK_RAW, IPPROTO_RAW );
+    } else {
+        i_fd = socket( i_family, *pb_tcp ? SOCK_STREAM : SOCK_DGRAM, 0);
+    }
+    if ( i_fd < 0 )
     {
         msg_Err( NULL, "unable to open socket (%s)", strerror(errno) );
         exit(EXIT_FAILURE);

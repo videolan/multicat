@@ -279,7 +279,7 @@ int main( int i_argc, char **pp_argv )
             break;
 
         case 'X':
-            i_retx_fd = OpenSocket( optarg, 0, 0, 0, NULL, &b_retx_tcp );
+            i_retx_fd = OpenSocket( optarg, 0, 0, 0, NULL, &b_retx_tcp, NULL );
             if ( i_retx_fd == -1 )
             {
                 msg_Err( NULL, "unable to set up retx with %s\n", optarg );
@@ -315,7 +315,7 @@ int main( int i_argc, char **pp_argv )
         usage();
 
     i_input_fd = OpenSocket( pp_argv[optind], 0, DEFAULT_PORT, 0, NULL,
-                             &b_input_tcp );
+                             &b_input_tcp, NULL );
     if ( i_input_fd == -1 )
     {
         msg_Err( NULL, "unable to open input socket" );
@@ -331,7 +331,7 @@ int main( int i_argc, char **pp_argv )
         p_outputs = realloc( p_outputs, ++i_nb_outputs * sizeof(output_t) );
         p_outputs[i_nb_outputs - 1].i_fd =
             OpenSocket( pp_argv[optind++], i_ttl, 0, DEFAULT_PORT,
-                        &p_outputs[i_nb_outputs - 1].i_weight, NULL );
+                        &p_outputs[i_nb_outputs - 1].i_weight, NULL, NULL );
         if ( p_outputs[i_nb_outputs - 1].i_fd == -1 )
         {
             msg_Err( NULL, "unable to open output socket" );

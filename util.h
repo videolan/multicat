@@ -21,6 +21,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
  *****************************************************************************/
 
+#include <netinet/udp.h>
+#include <netinet/ip.h>
+
 #define HAVE_CLOCK_NANOSLEEP
 
 #define DEFAULT_PORT 1234
@@ -32,6 +35,24 @@
 #define VERB_DBG  3
 #define VERB_INFO 2
 #define VERB_WARN 1
+
+/*****************************************************************************
+ * Raw udp packet structure with flexible-array payload
+ *****************************************************************************/
+struct udprawpkt {
+    struct  iphdr iph;
+    struct  udphdr udph;
+    uint8_t payload[];
+} __attribute__((packed));
+
+
+/*****************************************************************************
+ * OpenSocket options
+ *****************************************************************************/
+ struct opensocket_opt {
+    struct udprawpkt *p_raw_pktheader;
+ };
+
 
 /*****************************************************************************
  * Prototypes
@@ -46,7 +67,8 @@ void wall_Sleep( uint64_t i_delay );
 uint64_t real_Date( void );
 void real_Sleep( uint64_t i_delay );
 int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
-                uint16_t i_connect_port, unsigned int *pi_weight, bool *pb_tcp );
+                uint16_t i_connect_port, unsigned int *pi_weight, bool *pb_tcp,
+                struct opensocket_opt *p_opt);
 mode_t StatFile(const char *psz_arg);
 int OpenFile( const char *psz_arg, bool b_read, bool b_append );
 char *GetAuxFile( const char *psz_arg, size_t i_payload_size );

@@ -75,6 +75,8 @@ static bool b_input_udp = false, b_output_udp = false;
 static size_t i_asked_payload_size = DEFAULT_PAYLOAD_SIZE;
 static size_t i_rtp_header_size = RTP_HEADER_SIZE;
 static uint64_t i_rotate_size = DEFAULT_ROTATE_SIZE;
+struct udprawpkt pktheader;
+bool b_raw_packets = false;
 
 static volatile sig_atomic_t b_die = 0;
 static uint16_t i_rtp_seqnum;
@@ -91,7 +93,7 @@ void (*pf_ExitWrite)(void);
 
 static void usage(void)
 {
-    msg_Raw( NULL, "Usage: multicat [-i <RT priority>] [-t <ttl>] [-X] [-T <file name>] [-f] [-p <PCR PID>] [-s <chunks>] [-n <chunks>] [-k <start time>] [-d <duration>] [-a] [-r <file duration>] [-S <SSRC IP>] [-u] [-U] [-m <payload size>] [-R <RTP header size>] <input item> <output item>" );
+    msg_Raw( NULL, "Usage: multicat [-i <RT priority>] [-t <ttl>] [-X] [-T <file name>] [-f] [-p <PCR PID>] [-s <chunks>] [-n <chunks>] [-k <start time>] [-d <duration>] [-a] [-r <file duration>] [-S <SSRC IP>] [-u] [-U] [-m <payload size>] [-R <RTP header size>] [-w] <input item> <output item>" );
     msg_Raw( NULL, "    item format: <file path | device path | FIFO path | directory path | network host>" );
     msg_Raw( NULL, "    host format: [<connect addr>[:<connect port>]][@[<bind addr][:<bind port>]]" );
     msg_Raw( NULL, "    -X: also pass-through all packets to stdout" );
@@ -109,6 +111,7 @@ static void usage(void)
     msg_Raw( NULL, "    -U: destination has no RTP header" );
     msg_Raw( NULL, "    -m: size of the payload chunk, excluding optional RTP header (default 1316)" );
     msg_Raw( NULL, "    -R: size of the optional RTP header (default 12)" );
+    msg_Raw( NULL, "    -w: send with RAW (needed for /srcaddr)" );
     exit(EXIT_FAILURE);
 }
 
@@ -240,7 +243,7 @@ static int udp_InitRead( const char *psz_arg, size_t i_len,
                          off_t i_nb_skipped_chunks, int64_t i_pos )
 {
     if ( i_pos || (i_input_fd = OpenSocket( psz_arg, i_ttl, DEFAULT_PORT, 0,
-                                            NULL, &b_tcp )) < 0 )
+                                            NULL, &b_tcp, NULL )) < 0 )
         return -1;
 
     i_udp_nb_skips = i_nb_skipped_chunks;
@@ -252,6 +255,38 @@ static int udp_InitRead( const char *psz_arg, size_t i_len,
         pf_Date = real_Date;
 #endif
     return 0;
+}
+
+static ssize_t raw_Write( const void *p_buf, size_t i_len )
+{
+    ssize_t i_ret;
+    struct iovec iov[2];
+
+    #ifdef __FAVOR_BSD
+    pktheader.udph.uh_ulen
+    #else
+    pktheader.udph.len
+    #endif
+    = htons(sizeof(struct udphdr) + i_len);
+
+    iov[0].iov_base = &pktheader;
+    iov[0].iov_len = sizeof(struct udprawpkt);
+
+    iov[1].iov_base = (void *) p_buf;
+    iov[1].iov_len = i_len;
+
+    if ( (i_ret = writev( i_output_fd, iov, 2 )) < 0 )
+    {
+        if ( errno == EBADF || errno == ECONNRESET || errno == EPIPE )
+        {
+            msg_Err( NULL, "write error (%s)", strerror(errno) );
+            b_die = 1;
+        }
+        /* otherwise do not set b_die because these errors can be transient */
+        return 0;
+    }
+
+    return i_ret;
 }
 
 /* Please note that the write functions also work for TCP */
@@ -279,11 +314,20 @@ static void udp_ExitWrite(void)
 
 static int udp_InitWrite( const char *psz_arg, size_t i_len, bool b_append )
 {
-    if ( (i_output_fd = OpenSocket( psz_arg, i_ttl, 0, DEFAULT_PORT,
-                                    NULL, NULL )) < 0 )
-        return -1;
+    struct opensocket_opt opt;
 
-    pf_Write = udp_Write;
+    memset(&opt, 0, sizeof(struct opensocket_opt));
+    if (b_raw_packets) {
+        opt.p_raw_pktheader = &pktheader;
+    }
+    if ( (i_output_fd = OpenSocket( psz_arg, i_ttl, 0, DEFAULT_PORT,
+                                    NULL, NULL, &opt )) < 0 )
+        return -1;
+    if (b_raw_packets) { 
+        pf_Write = raw_Write;
+    } else {
+        pf_Write = udp_Write;
+    }
     pf_ExitWrite = udp_ExitWrite;
     return 0;
 }
@@ -727,7 +771,7 @@ int main( int i_argc, char **pp_argv )
     sigset_t set;
 
     /* Parse options */
-    while ( (c = getopt( i_argc, pp_argv, "i:t:XT:fp:s:n:k:d:ar:S:uUm:R:h" )) != -1 )
+    while ( (c = getopt( i_argc, pp_argv, "i:t:XT:fp:s:n:k:d:ar:S:uUm:R:wh" )) != -1 )
     {
         switch ( c )
         {
@@ -806,6 +850,10 @@ int main( int i_argc, char **pp_argv )
 
         case 'R':
             i_rtp_header_size = strtol( optarg, NULL, 0 );
+            break;
+
+        case 'w':
+            b_raw_packets = true;
             break;
 
         case 'h':

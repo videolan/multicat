@@ -72,6 +72,8 @@ Options include:
  /ttl=XX (time-to-live of the UDP packet)
  /tos=XX (sets the IPv4 Type Of Service option)
  /tcp (binds a TCP socket instead of UDP)
+ /srcaddr=XXX.XXX.XXX.XXX (source address for raw packets)
+ /srcportr=XX (source port for raw packets)
 
 Example:
     239.255.0.1:5004/ttl=64

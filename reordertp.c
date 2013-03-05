@@ -441,7 +441,7 @@ int main( int i_argc, char **pp_argv )
             break;
 
         case 'X':
-            i_retx_fd = i_fd = OpenSocket( optarg, 0, 0, 0, NULL, &b_tcp );
+            i_retx_fd = i_fd = OpenSocket( optarg, 0, 0, 0, NULL, &b_tcp, NULL );
             if ( i_fd == -1 )
             {
                 msg_Err( NULL, "unable to set up retx with %s\n", optarg );
@@ -475,7 +475,7 @@ int main( int i_argc, char **pp_argv )
     while ( optind < i_argc - 1 )
     {
         i_fd = OpenSocket( pp_argv[optind], 0, DEFAULT_PORT, 0, NULL,
-                           &b_tcp );
+                           &b_tcp, NULL );
         if ( i_fd == -1 )
         {
             msg_Err( NULL, "unable to open input %s\n", pp_argv[optind] );
@@ -495,7 +495,7 @@ int main( int i_argc, char **pp_argv )
         msg_Dbg( NULL, "%d retx passes", i_nb_retx );
 
     i_output_fd = OpenSocket( pp_argv[optind], i_ttl, 0, DEFAULT_PORT, NULL,
-                              NULL );
+                              NULL, NULL );
     if ( i_output_fd == -1 )
     {
         msg_Err( NULL, "unable to open output %s\n", pp_argv[optind] );

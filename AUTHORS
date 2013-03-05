@@ -7,6 +7,10 @@
 # The fields are: name (N), email (E), web-address (W), CVS account login (C),
 # PGP key ID and fingerprint (P), description (D), and snail-mail address (S).
 
+N: Benjamin Cohen
+E: bencoh AT notk DOT org
+D: raw sockets
+
 N: Christophe Massiot
 E: massiot AT via DOT ecp DOT fr
 C: massiot
