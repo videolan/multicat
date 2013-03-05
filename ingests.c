@@ -190,7 +190,7 @@ int main( int i_argc, char **pp_argv )
 
     for ( ; ; )
     {
-        char c;
+        int c;
 
         if ( (c = getopt(i_argc, pp_argv, "p:m:h")) == -1 )
             break;
