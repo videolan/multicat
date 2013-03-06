@@ -155,7 +155,7 @@ static uint64_t _wall_Date( bool b_realtime )
         (void)clock_gettime( CLOCK_REALTIME, &ts );
 
     return ((uint64_t)ts.tv_sec * (uint64_t)27000000)
-            + (uint64_t)(ts.tv_nsec * 27 / 1000);
+            + ((uint64_t)ts.tv_nsec * 27 / 1000);
 #else
     struct timeval tv_date;
 
