@@ -35,7 +35,7 @@ DIR=$1
 WANTED_CHUNKS=$2
 
 cd "$DIR"
-NB_CHUNKS=`ls -f *.ts | wc -l`
+NB_CHUNKS=`ls -a -1 *.ts | wc -l`
 
 if test $NB_CHUNKS -gt $WANTED_CHUNKS; then
 	ls -t *.ts | tail -n $(($WANTED_CHUNKS-$NB_CHUNKS)) | cut -d. -f 1 | xargs -I FILE sh -c "rm FILE.ts FILE.aux*"
