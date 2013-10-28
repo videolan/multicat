@@ -125,7 +125,7 @@ static void OutputFirst(void)
 }
 
 /*****************************************************************************
- * OutputFirst: emulate CBR at the end
+ * OutputLast: emulate CBR at the end
  *****************************************************************************/
 static void OutputLast(void)
 {

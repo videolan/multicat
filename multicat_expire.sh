@@ -38,10 +38,10 @@ cd "$DIR"
 NB_CHUNKS=`ls -a -1 *.ts | wc -l`
 
 if test $NB_CHUNKS -gt $WANTED_CHUNKS; then
-	ls -t *.ts | tail -n $(($WANTED_CHUNKS-$NB_CHUNKS)) | cut -d. -f 1 | xargs -I FILE sh -c "rm FILE.ts FILE.aux*"
+	ls -t *.ts 2>/dev/null | tail -n $(($WANTED_CHUNKS-$NB_CHUNKS)) | cut -d. -f 1 | xargs -I FILE sh -c "rm -rf FILE.*"
 fi
 
 FILES=`find . -name \*.ts -size +7 -print`
 if test -n "$FILES"; then
-	ls -t $FILES | tail -n 1 | xargs basename | cut -d. -f 1
+	ls -t $FILES 2>/dev/null | tail -n 1 | xargs basename | cut -d. -f 1
 fi

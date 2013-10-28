@@ -59,7 +59,7 @@
 #undef DEBUG_WRITEBACK
 #define POLL_TIMEOUT 1000 /* 1 s */
 #define MAX_LATENESS INT64_C(27000000) /* 1 s */
-#define FILE_FLUSH INT64_C(27000000) /* 1 s */
+#define FILE_FLUSH INT64_C(2700000) /* 100 ms */
 
 /*****************************************************************************
  * Local declarations
