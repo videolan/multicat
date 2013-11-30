@@ -561,7 +561,7 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
             else if ( IS_OPTION("ifaddr=") )
             {
                 char *option = config_stropt( ARG_OPTION("ifaddr=") );
-                i_if_addr = inet_addr( ARG_OPTION("ifaddr=") );
+                i_if_addr = inet_addr( option );
                 free( option );
             }
             else if ( IS_OPTION("ttl=") )
