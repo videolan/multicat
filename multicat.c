@@ -259,6 +259,7 @@ static int udp_InitRead( const char *psz_arg, size_t i_len,
 
 static ssize_t raw_Write( const void *p_buf, size_t i_len )
 {
+#ifndef __APPLE__
     ssize_t i_ret;
     struct iovec iov[2];
 
@@ -287,6 +288,9 @@ static ssize_t raw_Write( const void *p_buf, size_t i_len )
     }
 
     return i_ret;
+#else
+    return -1;
+#endif
 }
 
 /* Please note that the write functions also work for TCP */

@@ -216,7 +216,7 @@ void real_Sleep( uint64_t i_delay )
  *****************************************************************************/
 static int GetInterfaceIndex( const char *psz_name )
 {
-#ifndef __FreeBSD__
+#if !defined(__FreeBSD__) && !defined(__APPLE__)
     int i_fd;
     struct ifreq ifr;
 
@@ -398,6 +398,7 @@ static void RawFillHeaders(struct udprawpkt *dgram,
                         uint16_t portsrc, uint16_t portdst,
                         uint8_t ttl, uint8_t tos, uint16_t len)
 {
+#ifndef __APPLE__
     struct iphdr *iph = &(dgram->iph);
     struct udphdr *udph = &(dgram->udph);
 
@@ -439,6 +440,7 @@ static void RawFillHeaders(struct udprawpkt *dgram,
 
     // Compute ip header checksum. Computed by kernel when frag_off = 0 ?
     //iph->check = csum((unsigned short *)iph, sizeof(struct iphdr));
+#endif
 }
 
 /*****************************************************************************
@@ -654,6 +656,7 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
 
         if ( bind_addr.ss.ss_family != AF_UNSPEC )
         {
+            #ifndef __APPLE__
             if ( IN6_IS_ADDR_MULTICAST( &bind_addr.sin6.sin6_addr ) )
             {
                 struct ipv6_mreq imr;
@@ -683,6 +686,7 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
                 }
             }
             else
+            #endif
                 goto normal_bind;
         }
     }

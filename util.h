@@ -24,7 +24,11 @@
 #include <netinet/udp.h>
 #include <netinet/ip.h>
 
+#ifdef __APPLE__
+#define POLLRDHUP 0
+#else
 #define HAVE_CLOCK_NANOSLEEP
+#endif
 
 #define DEFAULT_PORT 1234
 #define DEFAULT_PAYLOAD_SIZE 1316
@@ -40,9 +44,11 @@
  * Raw udp packet structure with flexible-array payload
  *****************************************************************************/
 struct udprawpkt {
+#ifndef __APPLE__
     struct  iphdr iph;
     struct  udphdr udph;
     uint8_t payload[];
+#endif
 } __attribute__((packed));
 
 
