@@ -53,7 +53,7 @@
 
 #define DEFAULT_RETX_DELAY 200 /* ms */
 #define MIN_RETX_DELAY 10 /* ms */
-#define MAX_RETX_BURST 15 /* packets */
+#define DEFAULT_MAX_RETX_BURST 15 /* packets */
 
 /*****************************************************************************
  * Local declarations
@@ -106,16 +106,18 @@ static int i_cr_average = DEFAULT_CR_AVERAGE;
 
 static uint64_t i_retx_delay = DEFAULT_RETX_DELAY * 27000;
 static int i_retx_fd = -1;
+static unsigned int i_max_retx_burst = DEFAULT_MAX_RETX_BURST;
 
 static void usage(void)
 {
-    msg_Raw( NULL, "Usage: reordertp [-i <RT priority>] [-t <ttl>] [-b <buffer length>] [-U] [-g <max gap>] [-j <max jitter>] [-r <# of clock ref>] [-x <reorder/retx delay] [-X <retx URL>] [-m <payload size>] [-R <RTP header>] <src host 1> ... [<src host N>] <dest host>" );
+    msg_Raw( NULL, "Usage: reordertp [-i <RT priority>] [-t <ttl>] [-b <buffer length>] [-U] [-g <max gap>] [-j <max jitter>] [-r <# of clock ref>] [-n <max retx burst>] [-x <reorder/retx delay>] [-X <retx URL>] [-m <payload size>] [-R <RTP header>] <src host 1> ... [<src host N>] <dest host>" );
     msg_Raw( NULL, "    host format: [<connect addr>[:<connect port>]][@[<bind addr][:<bind port>]]" );
     msg_Raw( NULL, "    -U: strip RTP header" );
     msg_Raw( NULL, "    -b: buffer length in ms [default 400]" );
     msg_Raw( NULL, "    -g: max gap between two clock references in ms [default 300]" );
     msg_Raw( NULL, "    -j: max jitter in ms [default 150]" );
     msg_Raw( NULL, "    -r: number of clock references for low pass filter [default 500]" );
+    msg_Raw( NULL, "    -n: max number of retx requests [default 15]" );
     msg_Raw( NULL, "    -x: delay in ms after which retransmission requests are sent [default 200]" );
     msg_Raw( NULL, "    -X: retransmission service host:port[/tcp]" );
     msg_Raw( NULL, "    -m: size of the payload chunk, excluding optional RTP header (default 1316)" );
@@ -262,7 +264,7 @@ static void RetxCheck( uint64_t i_current_date )
             {
                 unsigned int i_nb_packets = (POW2_16 + i_current_seqnum -
                                             (i_prev_seqnum + 1)) % POW2_16;
-                if ( i_retx_fd != -1 && i_nb_packets <= MAX_RETX_BURST )
+                if ( i_retx_fd != -1 && i_nb_packets <= i_max_retx_burst )
                 {
                     uint8_t p_buffer[RETX_HEADER_SIZE];
                     msg_Dbg( NULL, "missing RTP packets %hu to %hu, retx started",
@@ -408,7 +410,7 @@ int main( int i_argc, char **pp_argv )
     pfd[i_nb_inputs - 1].fd = i_fd;                                         \
     pfd[i_nb_inputs - 1].events = POLLIN | POLLERR | POLLRDHUP | POLLHUP;
 
-    while ( (c = getopt( i_argc, pp_argv, "i:t:b:g:j:r:x:X:Um:R:h" )) != -1 )
+    while ( (c = getopt( i_argc, pp_argv, "i:t:b:g:j:r:n:x:X:Um:R:h" )) != -1 )
     {
         switch ( c )
         {
@@ -434,6 +436,10 @@ int main( int i_argc, char **pp_argv )
 
         case 'r':
             i_cr_average = strtol( optarg, NULL, 0 );
+            break;
+
+        case 'n':
+            i_max_retx_burst = strtoul( optarg, NULL, 0 );
             break;
 
         case 'x':
