@@ -184,7 +184,8 @@ static void RetxHandle(void)
     socklen_t i_len = sizeof(sout);
 
     i_size = recvfrom( i_retx_fd, p_buffer, i_size, 0, &sout.so, &i_len );
-    if ( i_size < 0 && errno != EAGAIN && errno != EINTR )
+    if ( i_size < 0 && errno != EAGAIN && errno != EINTR &&
+         errno != ECONNREFUSED )
     {
         msg_Err( NULL, "unrecoverable read error, dying (%s)",
                  strerror(errno) );
@@ -372,14 +373,6 @@ int main( int i_argc, char **pp_argv )
         }
         i_current_date = wall_Date();
 
-        if ( (pfd[0].revents & (POLLERR | POLLRDHUP | POLLHUP)) ||
-             (i_retx_fd != -1 &&
-              (pfd[1].revents & (POLLERR | POLLRDHUP | POLLHUP))))
-        {
-            msg_Err( NULL, "poll error\n" );
-            exit(EXIT_FAILURE);
-        }
-
         if ( pfd[0].revents & POLLIN )
         {
             /* Read input block */
@@ -417,7 +410,8 @@ int main( int i_argc, char **pp_argv )
             i_wanted_size -= p_input_block->i_size;
             i_size = read( i_input_fd, p_read_buffer, i_wanted_size );
 
-            if ( i_size < 0 && errno != EAGAIN && errno != EINTR )
+            if ( i_size < 0 && errno != EAGAIN && errno != EINTR &&
+                 errno != ECONNREFUSED )
             {
                 msg_Err( NULL, "unrecoverable read error, dying (%s)",
                          strerror(errno) );
@@ -468,9 +462,21 @@ int main( int i_argc, char **pp_argv )
 
             p_input_block = NULL;
         }
+        else if ( (pfd[0].revents & (POLLERR | POLLRDHUP | POLLHUP)) )
+        {
+            msg_Err( NULL, "poll error\n" );
+            exit(EXIT_FAILURE);
+        }
+
 
         if ( i_retx_fd != -1 && (pfd[1].revents & POLLIN) )
             RetxHandle();
+        else if ( i_retx_fd != -1 &&
+                  (pfd[1].revents & (POLLERR | POLLRDHUP | POLLHUP)) )
+        {
+            msg_Err( NULL, "poll error\n" );
+            exit(EXIT_FAILURE);
+        }
     }
 
     return EXIT_SUCCESS;

@@ -553,12 +553,6 @@ int main( int i_argc, char **pp_argv )
         {
             input_t *p_input = &p_inputs[i];
 
-            if ( pfd[i].revents & (POLLERR | POLLRDHUP | POLLHUP) )
-            {
-                msg_Err( NULL, "poll error on input %d" );
-                exit(EXIT_FAILURE);
-            }
-
             if ( pfd[i].revents & POLLIN )
             {
                 ssize_t i_size = i_asked_payload_size + i_rtp_header_size;
@@ -579,7 +573,8 @@ int main( int i_argc, char **pp_argv )
                 }
 
                 i_size = read( p_input->i_fd, p_buffer, i_size );
-                if ( i_size < 0 && errno != EAGAIN && errno != EINTR )
+                if ( i_size < 0 && errno != EAGAIN && errno != EINTR &&
+                     errno != ECONNREFUSED )
                 {
                     msg_Err( NULL, "unrecoverable read error, dying (%s)",
                              strerror(errno) );
@@ -601,6 +596,12 @@ int main( int i_argc, char **pp_argv )
 
                 p_input->p_block = NULL;
             }
+            else if ( pfd[i].revents & (POLLERR | POLLRDHUP | POLLHUP) )
+            {
+                msg_Err( NULL, "poll error on input %d" );
+                exit(EXIT_FAILURE);
+            }
+
         }
     }
 
