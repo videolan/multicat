@@ -151,6 +151,7 @@ static void SendBlock( int i_fd, struct sockaddr *p_sout,
 static void RetxQueue( block_t *p_block, uint64_t i_current_date )
 {
     p_block->i_date = i_current_date;
+    p_block->p_next = NULL;
 
     /* Queue block */
     if ( p_retx_last != NULL )
