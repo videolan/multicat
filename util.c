@@ -469,7 +469,7 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
                 struct opensocket_opt *p_opt)
 {
     sockaddr_t bind_addr, connect_addr;
-    int i_fd, i;
+    int i_fd = -1, i;
     char *psz_arg = strdup(_psz_arg);
     char *psz_token = psz_arg;
     char *psz_token2 = NULL;
@@ -580,6 +580,8 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
             }
             else if ( IS_OPTION("srcport=") )
                 i_raw_srcport = strtol( ARG_OPTION("srcport="), NULL, 0 );
+            else if ( IS_OPTION("fd=") )
+                i_fd = strtol( ARG_OPTION("fd="), NULL, 0 );
             else
                 msg_Warn( NULL, "unrecognized option %s", psz_token2 );
 
@@ -621,83 +623,87 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
     else i_connect_if_index = i_bind_if_index;
 
     /* Socket configuration */
-    if (b_raw_packets && b_host) { 
-        RawFillHeaders(p_opt->p_raw_pktheader,
-            i_raw_srcaddr, connect_addr.sin.sin_addr.s_addr, i_raw_srcport,
-            ntohs(connect_addr.sin.sin_port), i_ttl, i_tos, 0);
-        i_fd = socket( AF_INET, SOCK_RAW, IPPROTO_RAW );
-    } else {
-        i_fd = socket( i_family, *pb_tcp ? SOCK_STREAM : SOCK_DGRAM, 0);
-    }
     if ( i_fd < 0 )
     {
-        msg_Err( NULL, "unable to open socket (%s)", strerror(errno) );
-        exit(EXIT_FAILURE);
-    }
+        if (b_raw_packets && b_host)
+        { 
+            RawFillHeaders(p_opt->p_raw_pktheader,
+                i_raw_srcaddr, connect_addr.sin.sin_addr.s_addr, i_raw_srcport,
+                ntohs(connect_addr.sin.sin_port), i_ttl, i_tos, 0);
+            i_fd = socket( AF_INET, SOCK_RAW, IPPROTO_RAW );
+        } else
+            i_fd = socket( i_family, *pb_tcp ? SOCK_STREAM : SOCK_DGRAM, 0);
 
-    i = 1;
-    if ( setsockopt( i_fd, SOL_SOCKET, SO_REUSEADDR, (void *)&i,
-                     sizeof(i) ) == -1 )
-    {
-        msg_Err( NULL, "unable to set socket (%s)", strerror(errno) );
-        exit(EXIT_FAILURE);
-    }
-
-    if ( i_family == AF_INET6 )
-    {
-        if ( i_bind_if_index
-              && setsockopt( i_fd, IPPROTO_IPV6, IPV6_MULTICAST_IF,
-                     (void *)&i_bind_if_index, sizeof(i_bind_if_index) ) < 0 )
+        if ( i_fd < 0 )
         {
-            msg_Err( NULL, "couldn't set interface index" );
-            PrintSocket( "socket definition:", &bind_addr, &connect_addr );
+            msg_Err( NULL, "unable to open socket (%s)", strerror(errno) );
             exit(EXIT_FAILURE);
         }
 
-        if ( bind_addr.ss.ss_family != AF_UNSPEC )
+        i = 1;
+        if ( setsockopt( i_fd, SOL_SOCKET, SO_REUSEADDR, (void *)&i,
+                         sizeof(i) ) == -1 )
         {
-            #ifndef __APPLE__
-            if ( IN6_IS_ADDR_MULTICAST( &bind_addr.sin6.sin6_addr ) )
+            msg_Err( NULL, "unable to set socket (%s)", strerror(errno) );
+            exit(EXIT_FAILURE);
+        }
+
+        if ( i_family == AF_INET6 )
+        {
+            if ( i_bind_if_index
+                  && setsockopt( i_fd, IPPROTO_IPV6, IPV6_MULTICAST_IF,
+                         (void *)&i_bind_if_index, sizeof(i_bind_if_index) ) < 0 )
             {
-                struct ipv6_mreq imr;
-                sockaddr_t bind_addr_any = bind_addr;
-                bind_addr_any.sin6.sin6_addr = in6addr_any;
-
-                if ( bind( i_fd, &bind_addr_any.so,
-                           sizeof(bind_addr_any) ) < 0 )
-                {
-                    msg_Err( NULL, "couldn't bind" );
-                    PrintSocket( "socket definition:", &bind_addr,
-                                 &connect_addr );
-                    exit(EXIT_FAILURE);
-                }
-
-                imr.ipv6mr_multiaddr = bind_addr.sin6.sin6_addr;
-                imr.ipv6mr_interface = i_bind_if_index;
-
-                /* Join Multicast group without source filter */
-                if ( setsockopt( i_fd, IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP,
-                                 (char *)&imr, sizeof(struct ipv6_mreq) ) < 0 )
-                {
-                    msg_Err( NULL, "couldn't join multicast group" );
-                    PrintSocket( "socket definition:", &bind_addr,
-                                  &connect_addr );
-                    exit(EXIT_FAILURE);
-                }
+                msg_Err( NULL, "couldn't set interface index" );
+                PrintSocket( "socket definition:", &bind_addr, &connect_addr );
+                exit(EXIT_FAILURE);
             }
-            else
-            #endif
-                goto normal_bind;
+
+            if ( bind_addr.ss.ss_family != AF_UNSPEC )
+            {
+                #ifndef __APPLE__
+                if ( IN6_IS_ADDR_MULTICAST( &bind_addr.sin6.sin6_addr ) )
+                {
+                    struct ipv6_mreq imr;
+                    sockaddr_t bind_addr_any = bind_addr;
+                    bind_addr_any.sin6.sin6_addr = in6addr_any;
+
+                    if ( bind( i_fd, &bind_addr_any.so,
+                               sizeof(bind_addr_any) ) < 0 )
+                    {
+                        msg_Err( NULL, "couldn't bind" );
+                        PrintSocket( "socket definition:", &bind_addr,
+                                     &connect_addr );
+                        exit(EXIT_FAILURE);
+                    }
+
+                    imr.ipv6mr_multiaddr = bind_addr.sin6.sin6_addr;
+                    imr.ipv6mr_interface = i_bind_if_index;
+
+                    /* Join Multicast group without source filter */
+                    if ( setsockopt( i_fd, IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP,
+                                     (char *)&imr, sizeof(struct ipv6_mreq) ) < 0 )
+                    {
+                        msg_Err( NULL, "couldn't join multicast group" );
+                        PrintSocket( "socket definition:", &bind_addr,
+                                      &connect_addr );
+                        exit(EXIT_FAILURE);
+                    }
+                }
+                else
+                #endif
+                    goto normal_bind;
+            }
         }
-    }
-    else if ( bind_addr.ss.ss_family != AF_UNSPEC )
-    {
-normal_bind:
-        if ( bind( i_fd, &bind_addr.so, i_sockaddr_len ) < 0 )
+        else if ( bind_addr.ss.ss_family != AF_UNSPEC )
         {
-            msg_Err( NULL, "couldn't bind" );
-            PrintSocket( "socket definition:", &bind_addr, &connect_addr );
-            exit(EXIT_FAILURE);
+normal_bind:
+            if ( bind( i_fd, &bind_addr.so, i_sockaddr_len ) < 0 )
+            {
+                msg_Err( NULL, "couldn't bind" );
+                PrintSocket( "socket definition:", &bind_addr, &connect_addr );
+                exit(EXIT_FAILURE);
+            }
         }
     }
 
