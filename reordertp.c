@@ -63,6 +63,7 @@ typedef struct block_t
     uint8_t *p_data;
     unsigned int i_size;
     uint64_t i_date;
+    uint16_t i_seqnum;
     struct block_t *p_next, *p_prev;
 } block_t;
 
@@ -249,8 +250,8 @@ static void RetxCheck( uint64_t i_current_date )
                 /* No past, nothing to do */
                 continue;
 
-            uint16_t i_prev_seqnum = rtp_get_seqnum(p_prev->p_data);
-            uint16_t i_current_seqnum = rtp_get_seqnum(p_current->p_data);
+            uint16_t i_prev_seqnum = p_prev->i_seqnum;
+            uint16_t i_current_seqnum = p_current->i_seqnum;
 
             if ( i_current_seqnum == i_prev_seqnum )
             {
@@ -357,6 +358,7 @@ static void PacketRecv( block_t *p_block, uint64_t i_date )
         clock_NewRef( i_scaled_timestamp, i_date );
 
     p_block->i_date = clock_ToWall( i_scaled_timestamp ) + i_buffer_length;
+    p_block->i_seqnum = rtp_get_seqnum( p_block->p_data );
 
     /* Insert the block at the correct position */
     if ( p_last == NULL )
@@ -367,7 +369,10 @@ static void PacketRecv( block_t *p_block, uint64_t i_date )
     else
     {
         block_t *p_prev = p_last;
-        while ( p_prev != NULL && p_prev->i_date > p_block->i_date )
+        while ( p_prev != NULL && 
+                ((UINT16_MAX * 3 / 2 + (int32_t)p_prev->i_seqnum -
+                            (int32_t)p_block->i_seqnum)
+                             % UINT16_MAX - UINT16_MAX / 2) > 0 )
             p_prev = p_prev->p_prev;
         if ( p_prev == NULL )
         {
