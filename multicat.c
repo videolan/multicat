@@ -997,6 +997,10 @@ int main( int i_argc, char **pp_argv )
             i_payload_size = i_read_size;
         }
 
+        /* Skip last incomplete TS packet */
+        i_read_size -= i_payload_size % TS_SIZE;
+        i_payload_size -= i_payload_size % TS_SIZE;
+
         /* Pad to get the asked payload size */
         while ( i_payload_size + TS_SIZE <= i_asked_payload_size )
         {
