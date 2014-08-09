@@ -1,7 +1,7 @@
 /*****************************************************************************
  * util.h: Utils for the multicat suite
  *****************************************************************************
- * Copyright (C) 2009, 2011 VideoLAN
+ * Copyright (C) 2009, 2011, 2014 VideoLAN
  * $Id$
  *
  * Authors: Christophe Massiot <massiot@via.ecp.fr>
@@ -39,6 +39,17 @@
 #define VERB_DBG  3
 #define VERB_INFO 2
 #define VERB_WARN 1
+
+/*****************************************************************************
+ * sockaddr_t: wrapper to avoid strict-aliasing issues
+ *****************************************************************************/
+typedef union
+{
+    struct sockaddr_storage ss;
+    struct sockaddr so;
+    struct sockaddr_in sin;
+    struct sockaddr_in6 sin6;
+} sockaddr_t;
 
 /*****************************************************************************
  * Raw udp packet structure with flexible-array payload

@@ -1,7 +1,7 @@
 /*****************************************************************************
  * reordertp.c: rebuild an RTP stream from several aggregated links
  *****************************************************************************
- * Copyright (C) 2009, 2011 VideoLAN
+ * Copyright (C) 2009, 2011, 2014 VideoLAN
  * $Id$
  *
  * Authors: Christophe Massiot <massiot@via.ecp.fr>
@@ -72,6 +72,7 @@ typedef struct input_t
     int i_fd;
     bool b_tcp;
     block_t *p_block;
+    sockaddr_t peer;
 } input_t;
 
 static size_t i_asked_payload_size = DEFAULT_PAYLOAD_SIZE;
@@ -108,6 +109,7 @@ static int i_cr_average = DEFAULT_CR_AVERAGE;
 static uint64_t i_retx_delay = DEFAULT_RETX_DELAY * 27000;
 static int i_retx_fd = -1;
 static unsigned int i_max_retx_burst = DEFAULT_MAX_RETX_BURST;
+static int i_last_retx_input = 0;
 
 static void usage(void)
 {
@@ -166,8 +168,6 @@ void clock_NewRef( uint64_t i_clock, uint64_t i_wall )
         return;
     }
 
-    input_clock.last_cr = i_clock;
-
     /* Smooth clock reference variations. */
     i_extrapoled_clock = input_clock.cr_ref
                           + i_wall - input_clock.wall_ref;
@@ -191,6 +191,7 @@ void clock_NewRef( uint64_t i_clock, uint64_t i_wall )
         return;
     }
     input_clock.i_nb_space_packets = 0;
+    input_clock.last_cr = i_clock;
 
     /* Bresenham algorithm to smooth variations. */
     /* Gives a lot of importance to the first samples, but we suppose the
@@ -224,6 +225,30 @@ static void RetxDereference( block_t *p_block )
         p_block->p_next->p_prev = p_block->p_prev;
     else
         p_last = p_block->p_prev;
+}
+
+static int RetxGetFd(sockaddr_t **pp_sockaddr)
+{
+    if ( i_retx_fd != -1 ) {
+        *pp_sockaddr = NULL;
+        return i_retx_fd;
+    }
+
+    int i_nb_tries = 0;
+    while ( i_nb_tries < i_nb_inputs )
+    {
+        i_nb_tries++;
+        i_last_retx_input++;
+        i_last_retx_input %= i_nb_inputs;
+        if ( p_inputs[i_last_retx_input].peer.so.sa_family != AF_UNSPEC )
+            break;
+    }
+
+    if ( i_nb_tries == i_nb_inputs + 1 )
+        return -1;
+
+    *pp_sockaddr = &p_inputs[i_last_retx_input].peer;
+    return p_inputs[i_last_retx_input].i_fd;
 }
 
 static void RetxCheck( uint64_t i_current_date )
@@ -265,7 +290,10 @@ static void RetxCheck( uint64_t i_current_date )
             {
                 unsigned int i_nb_packets = (POW2_16 + i_current_seqnum -
                                             (i_prev_seqnum + 1)) % POW2_16;
-                if ( i_retx_fd != -1 && i_nb_packets <= i_max_retx_burst )
+                sockaddr_t *p_sockaddr;
+                int i_fd;
+                if ( i_nb_packets <= i_max_retx_burst &&
+                     (i_fd = RetxGetFd(&p_sockaddr)) != -1 )
                 {
                     uint8_t p_buffer[RETX_HEADER_SIZE];
                     msg_Dbg( NULL, "missing RTP packets %hu to %hu, retx started",
@@ -274,7 +302,11 @@ static void RetxCheck( uint64_t i_current_date )
                     retx_init(p_buffer);
                     retx_set_seqnum(p_buffer, (i_prev_seqnum + 1) % POW2_16);
                     retx_set_num(p_buffer, i_nb_packets);
-                    send( i_retx_fd, p_buffer, RETX_HEADER_SIZE, 0 );
+                    if ( p_sockaddr == NULL )
+                        send( i_fd, p_buffer, RETX_HEADER_SIZE, 0 );
+                    else
+                        sendto( i_fd, p_buffer, RETX_HEADER_SIZE, 0,
+                                &p_sockaddr->so, sizeof(sockaddr_t) );
                 }
                 else
                 {
@@ -354,6 +386,12 @@ static void PacketRecv( block_t *p_block, uint64_t i_date )
         break;
     }
 
+    if ( rtp_check_marker( p_block->p_data ) )
+    {
+        i_date = 0;
+        rtp_clear_marker( p_block->p_data );
+    }
+
     if ( i_date )
         clock_NewRef( i_scaled_timestamp, i_date );
 
@@ -370,9 +408,9 @@ static void PacketRecv( block_t *p_block, uint64_t i_date )
     {
         block_t *p_prev = p_last;
         while ( p_prev != NULL && 
-                ((UINT16_MAX * 3 / 2 + (int32_t)p_prev->i_seqnum -
-                            (int32_t)p_block->i_seqnum)
-                             % UINT16_MAX - UINT16_MAX / 2) > 0 )
+                (POW2_16 * 3 / 2 + (uint32_t)p_prev->i_seqnum -
+                            (uint32_t)p_block->i_seqnum)
+                             % POW2_16 > POW2_16 / 2 )
             p_prev = p_prev->p_prev;
         if ( p_prev == NULL )
         {
@@ -411,6 +449,7 @@ int main( int i_argc, char **pp_argv )
     p_inputs[i_nb_inputs - 1].i_fd = i_fd;                                  \
     p_inputs[i_nb_inputs - 1].b_tcp = b_tcp;                                \
     p_inputs[i_nb_inputs - 1].p_block = NULL;                               \
+    p_inputs[i_nb_inputs - 1].peer.so.sa_family = AF_UNSPEC;                \
     pfd = realloc( pfd, i_nb_inputs * sizeof(struct pollfd) );              \
     pfd[i_nb_inputs - 1].fd = i_fd;                                         \
     pfd[i_nb_inputs - 1].events = POLLIN | POLLERR | POLLRDHUP | POLLHUP;
@@ -577,7 +616,14 @@ int main( int i_argc, char **pp_argv )
                     i_size -= p_input->p_block->i_size;
                 }
 
-                i_size = read( p_input->i_fd, p_buffer, i_size );
+                if ( p_input->b_tcp )
+                    i_size = read( p_input->i_fd, p_buffer, i_size );
+                else
+                {
+                    socklen_t len = sizeof(sockaddr_t);
+                    i_size = recvfrom( p_input->i_fd, p_buffer, i_size, 0,
+                                       &p_input->peer.so, &len );
+                }
                 if ( i_size < 0 && errno != EAGAIN && errno != EINTR &&
                      errno != ECONNREFUSED )
                 {

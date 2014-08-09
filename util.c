@@ -57,17 +57,6 @@
 int i_verbose = VERB_DBG;
 
 /*****************************************************************************
- * sockaddr_t: wrapper to avoid strict-aliasing issues
- *****************************************************************************/
-typedef union
-{
-    struct sockaddr_storage ss;
-    struct sockaddr so;
-    struct sockaddr_in sin;
-    struct sockaddr_in6 sin6;
-} sockaddr_t;
-
-/*****************************************************************************
  * msg_Info
  *****************************************************************************/
 void msg_Info( void *_unused, const char *psz_format, ... )
