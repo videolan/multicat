@@ -473,6 +473,7 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
     bool b_raw_packets = false;
     in_addr_t i_raw_srcaddr = INADDR_ANY; 
     int i_raw_srcport = 0;
+    char *psz_ifname = NULL;
 
     bind_addr.ss.ss_family = AF_UNSPEC;
     connect_addr.ss.ss_family = AF_UNSPEC;
@@ -554,6 +555,13 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
                 char *option = config_stropt( ARG_OPTION("ifaddr=") );
                 i_if_addr = inet_addr( option );
                 free( option );
+            }
+            else if ( IS_OPTION("ifname=") )
+            {
+                psz_ifname = config_stropt( ARG_OPTION("ifname=") );
+                if (strlen(psz_ifname) >= IFNAMSIZ) {
+                    psz_ifname[IFNAMSIZ-1] = '\0';
+                }
             }
             else if ( IS_OPTION("ttl=") )
                 i_ttl = strtol( ARG_OPTION("ttl="), NULL, 0 );
@@ -767,6 +775,18 @@ normal_bind:
                     exit(EXIT_FAILURE);
                 }
             }
+#ifdef SO_BINDTODEVICE
+            if (psz_ifname) {
+                if ( setsockopt( i_fd, SOL_SOCKET, SO_BINDTODEVICE,
+                                 psz_ifname, strlen(psz_ifname)+1 ) < 0 ) {
+                    msg_Err( NULL, "couldn't bind to device %s (%s)",
+                             psz_ifname, strerror(errno) );
+                    exit(EXIT_FAILURE);
+                }
+                free(psz_ifname);
+                psz_ifname = NULL;
+            }
+#endif
         }
     }
 
