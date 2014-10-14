@@ -1087,6 +1087,6 @@ dropped_packet:
     pf_ExitRead();
     pf_ExitWrite();
 
-    return EXIT_SUCCESS;
+    return b_die ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
