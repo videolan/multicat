@@ -63,7 +63,14 @@ static void HandleSTC( uint64_t i_stc )
     int64_t i_sleep;
 retry:
     i_wall = real_Date() - i_delay;
-    i_sleep = i_stc - i_wall;
+    i_sleep = (int64_t)i_stc - (int64_t)i_wall;
+
+    if ( i_sleep > (int64_t)i_rotate_size )
+    {
+        msg_Err( NULL, "invalid aux file %"PRIu64" (stc %"PRIu64")",
+                 i_dir_file, i_stc );
+        exit(1);
+    }
 
     if ( i_sleep > i_tolerance )
     {
@@ -158,7 +165,12 @@ int main( int i_argc, char **pp_argv )
     close( OpenDirFile( psz_dir_name, i_dir_file, true, i_asked_payload_size,
                         &p_input_aux ) );
 
-    fseeko( p_input_aux, 8 * i_nb_skipped_chunks, SEEK_SET );
+    int ret = fseeko( p_input_aux, 8 * i_nb_skipped_chunks, SEEK_SET );
+    if ( ret == -1 )
+    {
+        msg_Err( NULL, "fseeko failed" );
+        exit(1);
+    }
 
     for ( ; ; )
     {
