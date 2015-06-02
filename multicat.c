@@ -78,7 +78,7 @@ static uint64_t i_rotate_size = DEFAULT_ROTATE_SIZE;
 struct udprawpkt pktheader;
 bool b_raw_packets = false;
 
-static volatile sig_atomic_t b_die = 0;
+static volatile sig_atomic_t b_die = 0, b_error = 0;
 static uint16_t i_rtp_seqnum;
 static uint64_t i_stc = 0; /* system time clock, used for date calculations */
 static uint64_t i_first_stc = 0;
@@ -120,7 +120,7 @@ static void usage(void)
  *****************************************************************************/
 static void SigHandler( int i_signal )
 {
-    b_die = 1;
+    b_die = b_error = 1;
 }
 
 /*****************************************************************************
@@ -138,13 +138,13 @@ static bool Poll(void)
     if ( i_ret < 0 )
     {
         msg_Err( NULL, "poll error (%s)", strerror(errno) );
-        b_die = 1;
+        b_die = b_error = 1;
         return false;
     }
     if ( pfd.revents & (POLLERR | POLLRDHUP | POLLHUP) )
     {
         msg_Err( NULL, "poll error" );
-        b_die = 1;
+        b_die = b_error = 1;
         return false;
     }
     if ( !i_ret ) return false;
@@ -171,7 +171,7 @@ static ssize_t tcp_Read( void *p_buf, size_t i_len )
     if ( (i_read_size = recv( i_input_fd, p_read_buffer, i_read_size, 0 )) < 0 )
     {
         msg_Err( NULL, "recv error (%s)", strerror(errno) );
-        b_die = 1;
+        b_die = b_error = 1;
         return 0;
     }
 
@@ -209,7 +209,7 @@ static ssize_t udp_Read( void *p_buf, size_t i_len )
         if ( (i_ret = recv( i_input_fd, p_buf, i_len, 0 )) < 0 )
         {
             msg_Err( NULL, "recv error (%s)", strerror(errno) );
-            b_die = 1;
+            b_die = b_error = 1;
             return 0;
         }
 
@@ -281,7 +281,7 @@ static ssize_t raw_Write( const void *p_buf, size_t i_len )
         if ( errno == EBADF || errno == ECONNRESET || errno == EPIPE )
         {
             msg_Err( NULL, "write error (%s)", strerror(errno) );
-            b_die = 1;
+            b_die = b_error = 1;
         }
         /* otherwise do not set b_die because these errors can be transient */
         return 0;
@@ -302,7 +302,7 @@ static ssize_t udp_Write( const void *p_buf, size_t i_len )
         if ( errno == EBADF || errno == ECONNRESET || errno == EPIPE )
         {
             msg_Err( NULL, "write error (%s)", strerror(errno) );
-            b_die = 1;
+            b_die = b_error = 1;
         }
         /* otherwise do not set b_die because these errors can be transient */
         return 0;
@@ -356,7 +356,7 @@ static ssize_t stream_Read( void *p_buf, size_t i_len )
     if ( (i_ret = read( i_input_fd, p_buf, i_len )) < 0 )
     {
         msg_Err( NULL, "read error (%s)", strerror(errno) );
-        b_die = 1;
+        b_die = b_error = 1;
         return 0;
     }
 
@@ -396,7 +396,7 @@ retry:
         if (errno == EAGAIN || errno == EINTR)
             goto retry;
         msg_Err( NULL, "write error (%s)", strerror(errno) );
-        b_die = 1;
+        b_die = b_error = 1;
     }
     return i_ret;
 }
@@ -428,7 +428,7 @@ static ssize_t file_Read( void *p_buf, size_t i_len )
     if ( (i_ret = read( i_input_fd, p_buf, i_len )) < 0 )
     {
         msg_Err( NULL, "read error (%s)", strerror(errno) );
-        b_die = 1;
+        b_die = b_error = 1;
         return 0;
     }
     if ( i_ret == 0 )
@@ -441,7 +441,7 @@ static ssize_t file_Read( void *p_buf, size_t i_len )
     if ( fread( p_aux, 8, 1, p_input_aux ) != 1 )
     {
         msg_Warn( NULL, "premature end of aux file reached" );
-        b_die = 1;
+        b_die = b_error = 1;
         return 0;
     }
     i_stc = FromSTC( p_aux );
@@ -521,7 +521,7 @@ static ssize_t file_Write( const void *p_buf, size_t i_len )
     if ( (i_ret = write( i_output_fd, p_buf, i_len )) < 0 )
     {
         msg_Err( NULL, "couldn't write to file (%s)", strerror(errno) );
-        b_die = 1;
+        b_die = b_error = 1;
         return i_ret;
     }
 #ifdef DEBUG_WRITEBACK
@@ -534,7 +534,7 @@ static ssize_t file_Write( const void *p_buf, size_t i_len )
     if ( fwrite( p_aux, 8, 1, p_output_aux ) != 1 )
     {
         msg_Err( NULL, "couldn't write to auxiliary file" );
-        b_die = 1;
+        b_die = b_error = 1;
     }
     if (!i_file_next_flush)
         i_file_next_flush = i_stc + FILE_FLUSH;
@@ -1087,6 +1087,6 @@ dropped_packet:
     pf_ExitRead();
     pf_ExitWrite();
 
-    return b_die ? EXIT_FAILURE : EXIT_SUCCESS;
+    return b_error ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
