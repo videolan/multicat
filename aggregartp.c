@@ -1,7 +1,7 @@
 /*****************************************************************************
  * aggregartp.c: split an RTP stream for several contribution links
  *****************************************************************************
- * Copyright (C) 2009, 2011, 2014 VideoLAN
+ * Copyright (C) 2009, 2011, 2014-2015 VideoLAN
  * $Id$
  *
  * Authors: Christophe Massiot <massiot@via.ecp.fr>
@@ -36,6 +36,7 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 #include <poll.h>
+#include <syslog.h>
 
 #include <bitstream/ietf/rtp.h>
 
@@ -84,7 +85,7 @@ static uint64_t i_retx_buffer = DEFAULT_RETX_BUFFER * 27000;
 
 static void usage(void)
 {
-    msg_Raw( NULL, "Usage: aggregartp [-i <RT priority>] [-t <ttl>] [-w] [-o <SSRC IP>] [-U] [-x <retx buffer>] [-X <retx URL>] [-m <payload size>] [-R <RTP header>] @<src host> <dest host 1>[,<weight 1>] ... [<dest host N>,<weight N>]" );
+    msg_Raw( NULL, "Usage: aggregartp [-i <RT priority>] [-l <syslogtag>] [-t <ttl>] [-w] [-o <SSRC IP>] [-U] [-x <retx buffer>] [-X <retx URL>] [-m <payload size>] [-R <RTP header>] @<src host> <dest host 1>[,<weight 1>] ... [<dest host N>,<weight N>]" );
     msg_Raw( NULL, "    host format: [<connect addr>[:<connect port>]][@[<bind addr][:<bind port>]]" );
     msg_Raw( NULL, "    -w: overwrite RTP timestamps" );
     msg_Raw( NULL, "    -o: overwrite RTP SSRC" );
@@ -249,6 +250,7 @@ int main( int i_argc, char **pp_argv )
 {
     int c;
     int i_priority = -1;
+    const char *psz_syslog_tag = NULL;
     int i_ttl = 0;
     bool b_udp = false;
     struct pollfd *pfd = malloc(sizeof(struct pollfd));
@@ -260,12 +262,16 @@ int main( int i_argc, char **pp_argv )
     pfd[i_nb_retx - 1].fd = i_fd;                                           \
     pfd[i_nb_retx - 1].events = POLLIN;
 
-    while ( (c = getopt( i_argc, pp_argv, "i:t:wo:x:X:Um:R:h" )) != -1 )
+    while ( (c = getopt( i_argc, pp_argv, "i:l:t:wo:x:X:Um:R:h" )) != -1 )
     {
         switch ( c )
         {
         case 'i':
             i_priority = strtol( optarg, NULL, 0 );
+            break;
+
+        case 'l':
+            psz_syslog_tag = optarg;
             break;
 
         case 't':
@@ -325,6 +331,9 @@ int main( int i_argc, char **pp_argv )
     }
     if ( optind >= i_argc - 1 )
         usage();
+
+    if ( psz_syslog_tag != NULL )
+        msg_Openlog( psz_syslog_tag, LOG_NDELAY, LOG_USER );
 
     i_input_fd = OpenSocket( pp_argv[optind], 0, DEFAULT_PORT, 0, NULL,
                              &b_input_tcp, NULL );
@@ -490,6 +499,8 @@ int main( int i_argc, char **pp_argv )
         }
     }
 
+    if ( psz_syslog_tag != NULL )
+        msg_Closelog();
+
     return EXIT_SUCCESS;
 }
-

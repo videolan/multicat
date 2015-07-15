@@ -1,7 +1,7 @@
 /*****************************************************************************
  * multicat_validate.c: validate position in directory input
  *****************************************************************************
- * Copyright (C) 2009, 2011 VideoLAN
+ * Copyright (C) 2009, 2011, 2015 VideoLAN
  * $Id$
  *
  * Authors: Christophe Massiot <massiot@via.ecp.fr>
@@ -31,6 +31,7 @@
 #include <stdbool.h>
 #include <inttypes.h>
 #include <string.h>
+#include <syslog.h>
 
 #include "util.h"
 
@@ -49,7 +50,7 @@ static bool b_status = false;
 
 static void usage(void)
 {
-    msg_Raw( NULL, "Usage: multicat_validate [-k <start time>] [-r <file duration>] [-W <tolerance>] [-m <payload size>] <input directory>" );
+    msg_Raw( NULL, "Usage: multicat_validate [-l <syslogtag>] [-k <start time>] [-r <file duration>] [-W <tolerance>] [-m <payload size>] <input directory>" );
     msg_Raw( NULL, "    -k: start at the given position (in 27 MHz units, negative = from the end)" );
     msg_Raw( NULL, "    -r: in directory mode, rotate file after this duration (default: 97200000000 ticks = 1 hour)" );
     msg_Raw( NULL, "    -W: maximum tolerated wait time before the forthcoming packet (by default: 27000000 ticks = 1 second)" );
@@ -97,6 +98,7 @@ retry:
  *****************************************************************************/
 int main( int i_argc, char **pp_argv )
 {
+    const char *psz_syslog_tag = NULL;
     off_t i_nb_skipped_chunks;
     FILE *p_input_aux;
     int c;
@@ -104,10 +106,14 @@ int main( int i_argc, char **pp_argv )
 
     setvbuf(stdout, NULL, _IOLBF, 0);
 
-    while ( (c = getopt( i_argc, pp_argv, "k:r:W:m:h" )) != -1 )
+    while ( (c = getopt( i_argc, pp_argv, "l:k:r:W:m:h" )) != -1 )
     {
         switch ( c )
         {
+        case 'l':
+            psz_syslog_tag = optarg;
+            break;
+
         case 'k':
             i_delay = strtoull( optarg, NULL, 0 );
             break;
@@ -134,6 +140,9 @@ int main( int i_argc, char **pp_argv )
         usage();
     psz_dir_name = pp_argv[optind];
     printf( "0\n" );
+
+    if ( psz_syslog_tag != NULL )
+        msg_Openlog( psz_syslog_tag, LOG_NDELAY, LOG_USER );
 
     if ( i_delay <= 0 )
     {
@@ -196,4 +205,7 @@ int main( int i_argc, char **pp_argv )
 
         HandleSTC( i_stc );
     }
+
+    if ( psz_syslog_tag != NULL )
+        msg_Closelog();
 }

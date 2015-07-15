@@ -1,7 +1,7 @@
 /*****************************************************************************
  * util.c: Utils for the multicat suite
  *****************************************************************************
- * Copyright (C) 2004, 2009, 2011 VideoLAN
+ * Copyright (C) 2004, 2009, 2011, 2015 VideoLAN
  * $Id$
  *
  * Authors: Christophe Massiot <massiot@via.ecp.fr>
@@ -42,6 +42,7 @@
 #include <unistd.h>
 #include <sys/mman.h>
 #include <netdb.h>
+#include <syslog.h>
 
 #include "util.h"
 
@@ -55,6 +56,25 @@
 #define PSZ_TS_EXT "ts"
 
 int i_verbose = VERB_DBG;
+static int b_syslog = 0;
+
+/*****************************************************************************
+ * msg_Openlog
+ *****************************************************************************/
+void msg_Openlog( const char *ident, int option, int facility )
+{
+    openlog(ident, option, facility);
+    b_syslog = 1;
+}
+
+/*****************************************************************************
+ * msg_Closelog
+ *****************************************************************************/
+void msg_Closelog( void )
+{
+    closelog();
+    b_syslog = 0;
+}
 
 /*****************************************************************************
  * msg_Info
@@ -62,14 +82,23 @@ int i_verbose = VERB_DBG;
 void msg_Info( void *_unused, const char *psz_format, ... )
 {
     if ( i_verbose >= VERB_INFO )
-    {
-        va_list args;
-        char psz_fmt[MAX_MSG];
-        va_start( args, psz_format );
+        return;
 
+    va_list args;
+    va_start( args, psz_format );
+
+    if ( !b_syslog )
+    {
+        char psz_fmt[MAX_MSG];
         snprintf( psz_fmt, MAX_MSG, "info: %s\n", psz_format );
         vfprintf( stderr, psz_fmt, args );
     }
+    else
+    {
+        vsyslog( LOG_INFO, psz_format, args );
+    }
+
+    va_end( args );
 }
 
 /*****************************************************************************
@@ -78,11 +107,20 @@ void msg_Info( void *_unused, const char *psz_format, ... )
 void msg_Err( void *_unused, const char *psz_format, ... )
 {
     va_list args;
-    char psz_fmt[MAX_MSG];
     va_start( args, psz_format );
 
-    snprintf( psz_fmt, MAX_MSG, "error: %s\n", psz_format );
-    vfprintf( stderr, psz_fmt, args );
+    if ( !b_syslog )
+    {
+        char psz_fmt[MAX_MSG];
+        snprintf( psz_fmt, MAX_MSG, "error: %s\n", psz_format );
+        vfprintf( stderr, psz_fmt, args );
+    }
+    else
+    {
+        vsyslog( LOG_ERR, psz_format, args );
+    }
+
+    va_end( args );
 }
 
 /*****************************************************************************
@@ -91,14 +129,23 @@ void msg_Err( void *_unused, const char *psz_format, ... )
 void msg_Warn( void *_unused, const char *psz_format, ... )
 {
     if ( i_verbose >= VERB_WARN )
-    {
-        va_list args;
-        char psz_fmt[MAX_MSG];
-        va_start( args, psz_format );
+        return;
 
+    va_list args;
+    va_start( args, psz_format );
+
+    if ( !b_syslog )
+    {
+        char psz_fmt[MAX_MSG];
         snprintf( psz_fmt, MAX_MSG, "warning: %s\n", psz_format );
         vfprintf( stderr, psz_fmt, args );
     }
+    else
+    {
+        vsyslog( LOG_WARNING, psz_format, args );
+    }
+
+    va_end( args );
 }
 
 /*****************************************************************************
@@ -107,18 +154,27 @@ void msg_Warn( void *_unused, const char *psz_format, ... )
 void msg_Dbg( void *_unused, const char *psz_format, ... )
 {
     if ( i_verbose >= VERB_DBG )
-    {
-        va_list args;
-        char psz_fmt[MAX_MSG];
-        va_start( args, psz_format );
+        return;
 
+    va_list args;
+    va_start( args, psz_format );
+
+    if ( !b_syslog )
+    {
+        char psz_fmt[MAX_MSG];
         snprintf( psz_fmt, MAX_MSG, "debug: %s\n", psz_format );
         vfprintf( stderr, psz_fmt, args );
     }
+    else
+    {
+        vsyslog( LOG_DEBUG, psz_format, args );
+    }
+
+    va_end( args );
 }
 
 /*****************************************************************************
- * msg_Raw
+ * msg_Raw: only used for usage()
  *****************************************************************************/
 void msg_Raw( void *_unused, const char *psz_format, ... )
 {

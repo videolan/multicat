@@ -1,7 +1,7 @@
 /*****************************************************************************
  * util.h: Utils for the multicat suite
  *****************************************************************************
- * Copyright (C) 2009, 2011, 2014 VideoLAN
+ * Copyright (C) 2009, 2011, 2014-2015 VideoLAN
  * $Id$
  *
  * Authors: Christophe Massiot <massiot@via.ecp.fr>
@@ -74,6 +74,8 @@ struct udprawpkt {
 /*****************************************************************************
  * Prototypes
  *****************************************************************************/
+void msg_Openlog( const char *ident, int option, int facility );
+void msg_Closelog( void );
 void msg_Info( void *_unused, const char *psz_format, ... );
 void msg_Err( void *_unused, const char *psz_format, ... );
 void msg_Warn( void *_unused, const char *psz_format, ... );

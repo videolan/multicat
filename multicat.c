@@ -1,7 +1,7 @@
 /*****************************************************************************
  * multicat.c: netcat-equivalent for multicast
  *****************************************************************************
- * Copyright (C) 2009, 2011-2012 VideoLAN
+ * Copyright (C) 2009, 2011-2012, 2015 VideoLAN
  * $Id$
  *
  * Authors: Christophe Massiot <massiot@via.ecp.fr>
@@ -42,6 +42,7 @@
 #include <pthread.h>
 #include <poll.h>
 #include <sys/ioctl.h>
+#include <syslog.h>
 
 #ifdef SIOCGSTAMPNS
 #   define HAVE_TIMESTAMPS
@@ -93,7 +94,7 @@ void (*pf_ExitWrite)(void);
 
 static void usage(void)
 {
-    msg_Raw( NULL, "Usage: multicat [-i <RT priority>] [-t <ttl>] [-X] [-T <file name>] [-f] [-p <PCR PID>] [-s <chunks>] [-n <chunks>] [-k <start time>] [-d <duration>] [-a] [-r <file duration>] [-S <SSRC IP>] [-u] [-U] [-m <payload size>] [-R <RTP header size>] [-w] <input item> <output item>" );
+    msg_Raw( NULL, "Usage: multicat [-i <RT priority>] [-l <syslogtag>] [-t <ttl>] [-X] [-T <file name>] [-f] [-p <PCR PID>] [-s <chunks>] [-n <chunks>] [-k <start time>] [-d <duration>] [-a] [-r <file duration>] [-S <SSRC IP>] [-u] [-U] [-m <payload size>] [-R <RTP header size>] [-w] <input item> <output item>" );
     msg_Raw( NULL, "    item format: <file path | device path | FIFO path | directory path | network host>" );
     msg_Raw( NULL, "    host format: [<connect addr>[:<connect port>]][@[<bind addr][:<bind port>]]" );
     msg_Raw( NULL, "    -X: also pass-through all packets to stdout" );
@@ -762,6 +763,7 @@ static void GetPCR( const uint8_t *p_buffer, size_t i_read_size )
 int main( int i_argc, char **pp_argv )
 {
     int i_priority = -1;
+    const char *psz_syslog_tag = NULL;
     bool b_passthrough = false;
     int i_stc_fd = -1;
     off_t i_skip_chunks = 0, i_nb_chunks = -1;
@@ -775,12 +777,16 @@ int main( int i_argc, char **pp_argv )
     sigset_t set;
 
     /* Parse options */
-    while ( (c = getopt( i_argc, pp_argv, "i:t:XT:fp:s:n:k:d:ar:S:uUm:R:wh" )) != -1 )
+    while ( (c = getopt( i_argc, pp_argv, "i:l:t:XT:fp:s:n:k:d:ar:S:uUm:R:wh" )) != -1 )
     {
         switch ( c )
         {
         case 'i':
             i_priority = strtol( optarg, NULL, 0 );
+            break;
+
+        case 'l':
+            psz_syslog_tag = optarg;
             break;
 
         case 't':
@@ -868,6 +874,9 @@ int main( int i_argc, char **pp_argv )
     }
     if ( optind >= i_argc - 1 )
         usage();
+
+    if ( psz_syslog_tag != NULL )
+        msg_Openlog( psz_syslog_tag, LOG_NDELAY, LOG_USER );
 
     /* Open sockets */
     if ( udp_InitRead( pp_argv[optind], i_asked_payload_size, i_skip_chunks,
@@ -1087,6 +1096,8 @@ dropped_packet:
     pf_ExitRead();
     pf_ExitWrite();
 
+    if ( psz_syslog_tag != NULL )
+        msg_Closelog();
+
     return b_error ? EXIT_FAILURE : EXIT_SUCCESS;
 }
-

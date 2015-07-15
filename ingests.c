@@ -1,7 +1,7 @@
 /*****************************************************************************
  * ingests.c: create the aux file for a transport stream file
  *****************************************************************************
- * Copyright (C) 2009, 2011 VideoLAN
+ * Copyright (C) 2009, 2011, 2015 VideoLAN
  * $Id$
  *
  * Authors: Christophe Massiot <massiot@via.ecp.fr>
@@ -30,6 +30,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <errno.h>
+#include <syslog.h>
 
 #include <bitstream/mpeg/ts.h>
 
@@ -59,7 +60,7 @@ static uint64_t i_last_stc = 0;
 
 static void usage(void)
 {
-    msg_Raw( NULL, "Usage: ingests -p <PCR PID> [-m <payload size>] <input ts>" );
+    msg_Raw( NULL, "Usage: ingests [-l <syslogtag>] -p <PCR PID> [-m <payload size>] <input ts>" );
     exit(EXIT_FAILURE);
 }
 
@@ -184,6 +185,7 @@ static void TSHandle( uint8_t *p_ts )
  *****************************************************************************/
 int main( int i_argc, char **pp_argv )
 {
+    const char *psz_syslog_tag = NULL;
     uint8_t *p_buffer;
     unsigned int i_payload_size = DEFAULT_PAYLOAD_SIZE;
     mode_t i_mode;
@@ -192,11 +194,15 @@ int main( int i_argc, char **pp_argv )
     {
         int c;
 
-        if ( (c = getopt(i_argc, pp_argv, "p:m:h")) == -1 )
+        if ( (c = getopt(i_argc, pp_argv, "l:p:m:h")) == -1 )
             break;
 
         switch ( c )
         {
+        case 'l':
+            psz_syslog_tag = optarg;
+            break;
+
         case 'p':
             i_pcr_pid = strtoul(optarg, NULL, 0);
             break;
@@ -219,6 +225,9 @@ int main( int i_argc, char **pp_argv )
     }
     if ( optind >= i_argc || !i_pcr_pid )
         usage();
+
+    if ( psz_syslog_tag != NULL )
+        msg_Openlog( psz_syslog_tag, LOG_NDELAY, LOG_USER );
 
     i_mode = StatFile( pp_argv[optind] );
     if ( S_ISCHR( i_mode ) || S_ISFIFO( i_mode ) || S_ISDIR( i_mode ) )
@@ -261,6 +270,9 @@ int main( int i_argc, char **pp_argv )
         OutputLast(); /* Emulate CBR */
     fclose( p_output_aux );
     close( i_fd );
+
+    if ( psz_syslog_tag != NULL )
+        msg_Closelog();
 
     return 0;
 }
