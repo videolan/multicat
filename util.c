@@ -81,7 +81,7 @@ void msg_Closelog( void )
  *****************************************************************************/
 void msg_Info( void *_unused, const char *psz_format, ... )
 {
-    if ( i_verbose >= VERB_INFO )
+    if ( i_verbose < VERB_INFO )
         return;
 
     va_list args;
@@ -128,7 +128,7 @@ void msg_Err( void *_unused, const char *psz_format, ... )
  *****************************************************************************/
 void msg_Warn( void *_unused, const char *psz_format, ... )
 {
-    if ( i_verbose >= VERB_WARN )
+    if ( i_verbose < VERB_WARN )
         return;
 
     va_list args;
@@ -153,7 +153,7 @@ void msg_Warn( void *_unused, const char *psz_format, ... )
  *****************************************************************************/
 void msg_Dbg( void *_unused, const char *psz_format, ... )
 {
-    if ( i_verbose >= VERB_DBG )
+    if ( i_verbose < VERB_DBG )
         return;
 
     va_list args;
