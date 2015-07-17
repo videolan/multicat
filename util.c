@@ -184,6 +184,7 @@ void msg_Raw( void *_unused, const char *psz_format, ... )
 
     snprintf( psz_fmt, MAX_MSG, "%s\n", psz_format );
     vfprintf( stderr, psz_fmt, args );
+    va_end( args );
 }
 
 /*****************************************************************************
