@@ -1,5 +1,16 @@
 $Id$
 
+Changes between 2.0 and 2.1:
+----------------------------
+  * FreeBSD and Mac OS X support
+  * Support for changing source address with raw sockets
+  * Fix overflow in date calculation on 32 bit platforms
+  * New fd= interface option
+  * Reorder packets based on sequence numbers instead of timestamps
+  * Add ability to cap the number of retx requests in reordertp
+  * Allow retransmission to work without a dedicated connection
+  * Add option to fix continuity counters
+  
 Changes between 1.0 and 2.0:
 ----------------------------
   * Support for directory input/output, where the stream is stored into

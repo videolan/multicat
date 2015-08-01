@@ -61,6 +61,7 @@
 #define POLL_TIMEOUT 1000 /* 1 s */
 #define MAX_LATENESS INT64_C(27000000) /* 1 s */
 #define FILE_FLUSH INT64_C(2700000) /* 100 ms */
+#define MAX_PIDS 8192
 
 /*****************************************************************************
  * Local declarations
@@ -76,31 +77,33 @@ static bool b_input_udp = false, b_output_udp = false;
 static size_t i_asked_payload_size = DEFAULT_PAYLOAD_SIZE;
 static size_t i_rtp_header_size = RTP_HEADER_SIZE;
 static uint64_t i_rotate_size = DEFAULT_ROTATE_SIZE;
-struct udprawpkt pktheader;
-bool b_raw_packets = false;
+static struct udprawpkt pktheader;
+static bool b_raw_packets = false;
+static uint8_t *pi_pid_cc_table = NULL;
 
 static volatile sig_atomic_t b_die = 0, b_error = 0;
 static uint16_t i_rtp_seqnum;
 static uint64_t i_stc = 0; /* system time clock, used for date calculations */
 static uint64_t i_first_stc = 0;
 static uint64_t i_pcr = 0, i_pcr_stc = 0; /* for RTP/TS output */
-uint64_t (*pf_Date)(void) = wall_Date;
-void (*pf_Sleep)( uint64_t ) = wall_Sleep;
-ssize_t (*pf_Read)( void *p_buf, size_t i_len );
-bool (*pf_Delay)(void) = NULL;
-void (*pf_ExitRead)(void);
-ssize_t (*pf_Write)( const void *p_buf, size_t i_len );
-void (*pf_ExitWrite)(void);
+static uint64_t (*pf_Date)(void) = wall_Date;
+static void (*pf_Sleep)( uint64_t ) = wall_Sleep;
+static ssize_t (*pf_Read)( void *p_buf, size_t i_len );
+static bool (*pf_Delay)(void) = NULL;
+static void (*pf_ExitRead)(void);
+static ssize_t (*pf_Write)( const void *p_buf, size_t i_len );
+static void (*pf_ExitWrite)(void);
 
 static void usage(void)
 {
-    msg_Raw( NULL, "Usage: multicat [-i <RT priority>] [-l <syslogtag>] [-t <ttl>] [-X] [-T <file name>] [-f] [-p <PCR PID>] [-s <chunks>] [-n <chunks>] [-k <start time>] [-d <duration>] [-a] [-r <file duration>] [-S <SSRC IP>] [-u] [-U] [-m <payload size>] [-R <RTP header size>] [-w] <input item> <output item>" );
+    msg_Raw( NULL, "Usage: multicat [-i <RT priority>] [-l <syslogtag>] [-t <ttl>] [-X] [-T <file name>] [-f] [-p <PCR PID>] [-C] [-s <chunks>] [-n <chunks>] [-k <start time>] [-d <duration>] [-a] [-r <file duration>] [-S <SSRC IP>] [-u] [-U] [-m <payload size>] [-R <RTP header size>] [-w] <input item> <output item>" );
     msg_Raw( NULL, "    item format: <file path | device path | FIFO path | directory path | network host>" );
     msg_Raw( NULL, "    host format: [<connect addr>[:<connect port>]][@[<bind addr][:<bind port>]]" );
     msg_Raw( NULL, "    -X: also pass-through all packets to stdout" );
     msg_Raw( NULL, "    -T: write an XML file with the current characteristics of transmission" );
     msg_Raw( NULL, "    -f: output packets as fast as possible" );
     msg_Raw( NULL, "    -p: overwrite or create RTP timestamps using PCR PID (MPEG-2/TS)" );
+    msg_Raw( NULL, "    -C: rewrite continuity counters to be continuous" );
     msg_Raw( NULL, "    -s: skip the first N chunks of payload [deprecated]" );
     msg_Raw( NULL, "    -n: exit after playing N chunks of payload [deprecated]" );
     msg_Raw( NULL, "    -k: start at the given position (in 27 MHz units, negative = from the end)" );
@@ -743,14 +746,44 @@ static void GetPCR( const uint8_t *p_buffer, size_t i_read_size )
         if ( !ts_validate( p_buffer ) )
         {
             msg_Warn( NULL, "invalid TS packet (sync=0x%x)", p_buffer[0] );
-            return;
         }
-        if ( (i_pid == i_pcr_pid || i_pcr_pid == 8192)
+        else if ( (i_pid == i_pcr_pid || i_pcr_pid == 8192)
               && ts_has_adaptation(p_buffer) && ts_get_adaptation(p_buffer)
               && tsaf_has_pcr(p_buffer) )
         {
             i_pcr = tsaf_get_pcr( p_buffer ) * 300 + tsaf_get_pcrext( p_buffer );
             i_pcr_stc = i_stc;
+        }
+        p_buffer += TS_SIZE;
+        i_read_size -= TS_SIZE;
+    }
+}
+
+/*****************************************************************************
+ * FIxCC: fix continuity counters
+ *****************************************************************************/
+static void FixCC( uint8_t *p_buffer, size_t i_read_size )
+{
+    while ( i_read_size >= TS_SIZE )
+    {
+        uint16_t i_pid = ts_get_pid( p_buffer );
+
+        if ( !ts_validate( p_buffer ) )
+        {
+            msg_Warn( NULL, "invalid TS packet (sync=0x%x)", p_buffer[0] );
+        }
+        else
+        {
+            if ( pi_pid_cc_table[i_pid] == 0x10 )
+            {
+                msg_Dbg( NULL, "new pid entry %d", i_pid );
+                pi_pid_cc_table[i_pid] = 0;
+            }
+            else if ( ts_has_payload( p_buffer ) )
+            {
+                pi_pid_cc_table[i_pid] = (pi_pid_cc_table[i_pid] + 1) % 0x10; 
+            }
+            ts_set_cc( p_buffer, pi_pid_cc_table[i_pid] );
         }
         p_buffer += TS_SIZE;
         i_read_size -= TS_SIZE;
@@ -777,7 +810,7 @@ int main( int i_argc, char **pp_argv )
     sigset_t set;
 
     /* Parse options */
-    while ( (c = getopt( i_argc, pp_argv, "i:l:t:XT:fp:s:n:k:d:ar:S:uUm:R:wh" )) != -1 )
+    while ( (c = getopt( i_argc, pp_argv, "i:l:t:XT:fp:Cs:n:k:d:ar:S:uUm:R:wh" )) != -1 )
     {
         switch ( c )
         {
@@ -810,6 +843,11 @@ int main( int i_argc, char **pp_argv )
 
         case 'p':
             i_pcr_pid = strtol( optarg, NULL, 0 );
+            break;
+
+        case 'C':
+            pi_pid_cc_table = malloc(MAX_PIDS * sizeof(uint8_t));
+            memset(pi_pid_cc_table, 0x10, MAX_PIDS * sizeof(uint8_t));
             break;
 
         case 's':
@@ -1018,6 +1056,10 @@ int main( int i_argc, char **pp_argv )
             i_payload_size += TS_SIZE;
         }
 
+        /* Fix continuity counters */
+        if ( pi_pid_cc_table != NULL )
+            FixCC( p_payload, i_payload_size );
+
         /* Prepare header and size of output */
         if ( b_output_udp )
         {
@@ -1092,6 +1134,8 @@ dropped_packet:
         if ( !i_nb_chunks )
             break;
     }
+
+    free(pi_pid_cc_table);
 
     pf_ExitRead();
     pf_ExitWrite();
