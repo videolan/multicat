@@ -54,6 +54,7 @@
 
 #include <bitstream/ietf/rtp.h>
 #include <bitstream/mpeg/ts.h>
+#include <bitstream/mpeg/pes.h>
 
 #include "util.h"
 
@@ -62,6 +63,9 @@
 #define MAX_LATENESS INT64_C(27000000) /* 1 s */
 #define FILE_FLUSH INT64_C(2700000) /* 100 ms */
 #define MAX_PIDS 8192
+#define POW2_33 UINT64_C(8589934592)
+#define TS_CLOCK_MAX (POW2_33 * 27000000 / 90000)
+#define MAX_PCR_INTERVAL (27000000 / 2)
 
 /*****************************************************************************
  * Local declarations
@@ -80,6 +84,10 @@ static uint64_t i_rotate_size = DEFAULT_ROTATE_SIZE;
 static struct udprawpkt pktheader;
 static bool b_raw_packets = false;
 static uint8_t *pi_pid_cc_table = NULL;
+/* PCR/PTS/DTS restamping */
+static uint64_t i_last_pcr_date;
+static uint64_t i_last_pcr = TS_CLOCK_MAX;
+static uint64_t i_pcr_offset;
 
 static volatile sig_atomic_t b_die = 0, b_error = 0;
 static uint16_t i_rtp_seqnum;
@@ -96,7 +104,7 @@ static void (*pf_ExitWrite)(void);
 
 static void usage(void)
 {
-    msg_Raw( NULL, "Usage: multicat [-i <RT priority>] [-l <syslogtag>] [-t <ttl>] [-X] [-T <file name>] [-f] [-p <PCR PID>] [-C] [-s <chunks>] [-n <chunks>] [-k <start time>] [-d <duration>] [-a] [-r <file duration>] [-S <SSRC IP>] [-u] [-U] [-m <payload size>] [-R <RTP header size>] [-w] <input item> <output item>" );
+    msg_Raw( NULL, "Usage: multicat [-i <RT priority>] [-l <syslogtag>] [-t <ttl>] [-X] [-T <file name>] [-f] [-p <PCR PID>] [-C] [-P] [-s <chunks>] [-n <chunks>] [-k <start time>] [-d <duration>] [-a] [-r <file duration>] [-S <SSRC IP>] [-u] [-U] [-m <payload size>] [-R <RTP header size>] [-w] <input item> <output item>" );
     msg_Raw( NULL, "    item format: <file path | device path | FIFO path | directory path | network host>" );
     msg_Raw( NULL, "    host format: [<connect addr>[:<connect port>]][@[<bind addr][:<bind port>]]" );
     msg_Raw( NULL, "    -X: also pass-through all packets to stdout" );
@@ -104,6 +112,7 @@ static void usage(void)
     msg_Raw( NULL, "    -f: output packets as fast as possible" );
     msg_Raw( NULL, "    -p: overwrite or create RTP timestamps using PCR PID (MPEG-2/TS)" );
     msg_Raw( NULL, "    -C: rewrite continuity counters to be continuous" );
+    msg_Raw( NULL, "    -P: restamp PCRs, DTSs, and PTSs" );
     msg_Raw( NULL, "    -s: skip the first N chunks of payload [deprecated]" );
     msg_Raw( NULL, "    -n: exit after playing N chunks of payload [deprecated]" );
     msg_Raw( NULL, "    -k: start at the given position (in 27 MHz units, negative = from the end)" );
@@ -760,7 +769,7 @@ static void GetPCR( const uint8_t *p_buffer, size_t i_read_size )
 }
 
 /*****************************************************************************
- * FIxCC: fix continuity counters
+ * FixCC: fix continuity counters
  *****************************************************************************/
 static void FixCC( uint8_t *p_buffer, size_t i_read_size )
 {
@@ -791,6 +800,98 @@ static void FixCC( uint8_t *p_buffer, size_t i_read_size )
 }
 
 /*****************************************************************************
+ * RestampPCR
+ *****************************************************************************/
+static void RestampPCR(uint8_t *p_ts)
+{
+    uint64_t i_pcr = tsaf_get_pcr(p_ts) * 300 + tsaf_get_pcrext(p_ts);
+    bool b_discontinuity = tsaf_has_discontinuity(p_ts);
+
+    if (i_last_pcr == TS_CLOCK_MAX)
+        i_last_pcr = i_pcr;
+    else {
+        /* handle 2^33 wrap-arounds */
+        uint64_t i_delta =
+            (TS_CLOCK_MAX + i_pcr -
+             (i_last_pcr % TS_CLOCK_MAX)) % TS_CLOCK_MAX;
+        if (i_delta <= MAX_PCR_INTERVAL && !b_discontinuity)
+            i_last_pcr = i_pcr;
+        else {
+            msg_Warn( NULL, "PCR discontinuity (%"PRIu64")", i_delta );
+            i_last_pcr += i_stc - i_last_pcr_date;
+            i_last_pcr %= TS_CLOCK_MAX;
+            i_pcr_offset += TS_CLOCK_MAX + i_last_pcr - i_pcr;
+            i_pcr_offset %= TS_CLOCK_MAX;
+            i_last_pcr = i_pcr;
+        }
+    }
+    i_last_pcr_date = i_stc;
+    if (!i_pcr_offset)
+        return;
+
+    i_pcr += i_pcr_offset;
+    i_pcr %= TS_CLOCK_MAX;
+    tsaf_set_pcr(p_ts, i_pcr / 300);
+    tsaf_set_pcrext(p_ts, i_pcr % 300);
+    tsaf_clear_discontinuity(p_ts);
+}
+
+/*****************************************************************************
+ * RestampTS
+ *****************************************************************************/
+static uint64_t RestampTS(uint64_t i_ts)
+{
+    i_ts += i_pcr_offset;
+    i_ts %= TS_CLOCK_MAX;
+    return i_ts;
+}
+
+/*****************************************************************************
+ * Restamp: Restamp PCRs, DTSs and PTSs
+ *****************************************************************************/
+static void Restamp( uint8_t *p_buffer, size_t i_read_size )
+{
+    while ( i_read_size >= TS_SIZE )
+    {
+        if ( !ts_validate( p_buffer ) )
+        {
+            msg_Warn( NULL, "invalid TS packet (sync=0x%x)", p_buffer[0] );
+        }
+        else
+        {
+            if (ts_has_adaptation(p_buffer) && ts_get_adaptation(p_buffer) &&
+                tsaf_has_pcr(p_buffer))
+                RestampPCR(p_buffer);
+
+            uint16_t header_size = TS_HEADER_SIZE +
+                                   (ts_has_adaptation(p_buffer) ? 1 : 0) +
+                                   ts_get_adaptation(p_buffer);
+            if (ts_get_unitstart(p_buffer) && ts_has_payload(p_buffer) &&
+                header_size + PES_HEADER_SIZE_PTS <= TS_SIZE &&
+                pes_validate(p_buffer + header_size) &&
+                pes_get_streamid(p_buffer + header_size) !=
+                    PES_STREAM_ID_PRIVATE_2 &&
+                pes_validate_header(p_buffer + header_size) &&
+                pes_has_pts(p_buffer + header_size) &&
+                pes_validate_pts(p_buffer + header_size)) {
+                pes_set_pts(p_buffer + header_size,
+                        RestampTS(pes_get_pts(p_buffer + header_size) * 300) /
+                        300);
+
+                if (header_size + PES_HEADER_SIZE_PTSDTS <= TS_SIZE &&
+                    pes_has_dts(p_buffer + header_size) &&
+                    pes_validate_dts(p_buffer + header_size))
+                    pes_set_dts(p_buffer + header_size,
+                        RestampTS(pes_get_dts(p_buffer + header_size) * 300) /
+                        300);
+            }
+        }
+        p_buffer += TS_SIZE;
+        i_read_size -= TS_SIZE;
+    }
+}
+
+/*****************************************************************************
  * Entry point
  *****************************************************************************/
 int main( int i_argc, char **pp_argv )
@@ -798,6 +899,7 @@ int main( int i_argc, char **pp_argv )
     int i_priority = -1;
     const char *psz_syslog_tag = NULL;
     bool b_passthrough = false;
+    bool b_restamp = false;
     int i_stc_fd = -1;
     off_t i_skip_chunks = 0, i_nb_chunks = -1;
     int64_t i_seek = 0;
@@ -810,7 +912,7 @@ int main( int i_argc, char **pp_argv )
     sigset_t set;
 
     /* Parse options */
-    while ( (c = getopt( i_argc, pp_argv, "i:l:t:XT:fp:Cs:n:k:d:ar:S:uUm:R:wh" )) != -1 )
+    while ( (c = getopt( i_argc, pp_argv, "i:l:t:XT:fp:CPs:n:k:d:ar:S:uUm:R:wh" )) != -1 )
     {
         switch ( c )
         {
@@ -848,6 +950,10 @@ int main( int i_argc, char **pp_argv )
         case 'C':
             pi_pid_cc_table = malloc(MAX_PIDS * sizeof(uint8_t));
             memset(pi_pid_cc_table, 0x10, MAX_PIDS * sizeof(uint8_t));
+            break;
+
+        case 'P':
+            b_restamp = true;
             break;
 
         case 's':
@@ -1059,6 +1165,10 @@ int main( int i_argc, char **pp_argv )
         /* Fix continuity counters */
         if ( pi_pid_cc_table != NULL )
             FixCC( p_payload, i_payload_size );
+
+        /* Restamp */
+        if ( b_restamp )
+            Restamp( p_payload, i_payload_size );
 
         /* Prepare header and size of output */
         if ( b_output_udp )

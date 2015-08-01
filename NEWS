@@ -9,7 +9,7 @@ Changes between 2.0 and 2.1:
   * Reorder packets based on sequence numbers instead of timestamps
   * Add ability to cap the number of retx requests in reordertp
   * Allow retransmission to work without a dedicated connection
-  * Add option to fix continuity counters
+  * Add options to fix continuity counters and restamp dates
   
 Changes between 1.0 and 2.0:
 ----------------------------
