@@ -294,10 +294,6 @@ int main( int i_argc, char **pp_argv )
 
         case 'x':
             i_retx_buffer = strtoll( optarg, NULL, 0 ) * 27000;
-
-            p_retx_block = malloc( sizeof(block_t) + RETX_HEADER_SIZE );
-            p_retx_block->p_data = (uint8_t *)p_retx_block + sizeof(block_t);
-            p_retx_block->i_size = 0;
             break;
 
         case 'X':
@@ -370,6 +366,10 @@ int main( int i_argc, char **pp_argv )
     }
     msg_Dbg( NULL, "%d outputs weight %u%s", i_nb_outputs, i_max_weight,
              i_retx_fd != -1 ? ", with retx" : "" );
+
+    p_retx_block = malloc( sizeof(block_t) + RETX_HEADER_SIZE );
+    p_retx_block->p_data = (uint8_t *)p_retx_block + sizeof(block_t);
+    p_retx_block->i_size = 0;
 
     if ( i_priority > 0 )
     {
