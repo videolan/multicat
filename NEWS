@@ -10,6 +10,8 @@ Changes between 2.0 and 2.1:
   * Add ability to cap the number of retx requests in reordertp
   * Allow retransmission to work without a dedicated connection
   * Add options to fix continuity counters and restamp dates
+  * Use SO_BINDTODEVICE to bind to a specific interface
+  * Add option for syslog logging
   
 Changes between 1.0 and 2.0:
 ----------------------------
