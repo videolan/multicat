@@ -26,7 +26,10 @@
 
 #ifdef __APPLE__
 #define POLLRDHUP 0
-#else
+/* uClibc may does not have clock_nanosleep() */
+#elif !defined (__UCLIBC__) || \
+       defined (__UCLIBC__) && defined (__UCLIBC_HAS_THREADS_NATIVE__) \
+                            && defined (__UCLIBC_HAS_ADVANCED_REALTIME__)
 #define HAVE_CLOCK_NANOSLEEP
 #endif
 
