@@ -264,7 +264,7 @@ void real_Sleep( uint64_t i_delay )
  *****************************************************************************/
 static int GetInterfaceIndex( const char *psz_name )
 {
-#if !defined(__FreeBSD__) && !defined(__APPLE__)
+#if !defined(__APPLE__)
     int i_fd;
     struct ifreq ifr;
 
@@ -285,7 +285,11 @@ static int GetInterfaceIndex( const char *psz_name )
 
     close( i_fd );
 
+#if defined(__FreeBSD__)
+    return ifr.ifr_index;
+#else
     return ifr.ifr_ifindex;
+#endif
 #else
     return 0;
 #endif
