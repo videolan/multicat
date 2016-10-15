@@ -99,9 +99,6 @@ static void Output(void)
     int i_nb_payloads = (i_ts_since_output + i_ts_in_payload - 1)
                           / i_ts_in_payload;
 
-    if ( i_ts_since_output <= 0 )
-        return;
-
     if ( b_init )
     {
         /* Emulate CBR */
@@ -151,6 +148,12 @@ static void TSHandle( uint8_t *p_ts )
     }
 
     i_ts_since_output++;
+
+    int i_nb_payloads = (i_ts_since_output + i_ts_in_payload - 1)
+                          / i_ts_in_payload;
+
+    if ( i_nb_payloads <= 0 )
+        return;
 
     if ( (i_pid == i_pcr_pid || i_pcr_pid == 8192)
           && ts_has_adaptation(p_ts) && ts_get_adaptation(p_ts)
