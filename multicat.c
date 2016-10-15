@@ -872,15 +872,16 @@ static void Restamp( uint8_t *p_buffer, size_t i_read_size )
                 pes_get_streamid(p_buffer + header_size) !=
                     PES_STREAM_ID_PRIVATE_2 &&
                 pes_validate_header(p_buffer + header_size) &&
-                pes_has_pts(p_buffer + header_size) &&
-                pes_validate_pts(p_buffer + header_size)) {
+                pes_has_pts(p_buffer + header_size)
+                /* disable the check as this is a common mistake */
+                /* && pes_validate_pts(p_buffer + header_size) */) {
                 pes_set_pts(p_buffer + header_size,
                         RestampTS(pes_get_pts(p_buffer + header_size) * 300) /
                         300);
 
                 if (header_size + PES_HEADER_SIZE_PTSDTS <= TS_SIZE &&
-                    pes_has_dts(p_buffer + header_size) &&
-                    pes_validate_dts(p_buffer + header_size))
+                    pes_has_dts(p_buffer + header_size)
+                    /* && pes_validate_dts(p_buffer + header_size) */)
                     pes_set_dts(p_buffer + header_size,
                         RestampTS(pes_get_dts(p_buffer + header_size) * 300) /
                         300);
