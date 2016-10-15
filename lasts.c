@@ -43,7 +43,7 @@ int main(int i_argc, char **ppsz_argv)
     if (i_argc != 2 || !strcmp(ppsz_argv[1], "-h") ||
         !strcmp(ppsz_argv[1], "--help"))
     {
-        fprintf(stderr, "Usage: lasts <aux file>");
+        fprintf(stderr, "Usage: lasts <aux file>\n");
         exit(EXIT_FAILURE);
     }
 
