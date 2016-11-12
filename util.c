@@ -1082,7 +1082,7 @@ off_t LookupAuxFile( const char *psz_arg, int64_t i_wanted, bool b_absolute )
         uint8_t *p_mid_aux = p_aux + i_mid_offset * sizeof(uint64_t);
         uint64_t i_mid_stc = FromSTC( p_mid_aux );
 
-        if ( i_offset1 == i_mid_offset )
+        if ( i_offset1 == i_mid_offset && i_offset2 == i_mid_offset )
             break;
 
         if ( i_mid_stc >= i_wanted )
