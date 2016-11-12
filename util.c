@@ -962,7 +962,7 @@ int OpenFile( const char *psz_arg, bool b_read, bool b_append )
         {
             msg_Err( NULL, "file %s doesn't exist (%s)", psz_arg,
                      strerror(errno) );
-            exit(EXIT_FAILURE);
+            return -1;
         }
         i_mode |= O_CREAT;
     }
@@ -977,7 +977,7 @@ int OpenFile( const char *psz_arg, bool b_read, bool b_append )
     if ( (i_fd = open( psz_arg, i_mode, 0644 )) < 0 )
     {
         msg_Err( NULL, "couldn't open file %s (%s)", psz_arg, strerror(errno) );
-        exit(EXIT_FAILURE);
+        return -1;
     }
 
     return i_fd;

@@ -81,6 +81,7 @@ static bool b_input_udp = false, b_output_udp = false;
 static size_t i_asked_payload_size = DEFAULT_PAYLOAD_SIZE;
 static size_t i_rtp_header_size = RTP_HEADER_SIZE;
 static uint64_t i_rotate_size = DEFAULT_ROTATE_SIZE;
+static uint64_t i_duration = 0;
 static struct udprawpkt pktheader;
 static bool b_raw_packets = false;
 static uint8_t *pi_pid_cc_table = NULL;
@@ -393,6 +394,7 @@ static int stream_InitRead( const char *psz_arg, size_t i_len,
     if ( i_pos ) return -1;
 
     i_input_fd = OpenFile( psz_arg, true, false );
+    if ( i_input_fd < 0 ) return -1;
     i_stream_nb_skips = i_nb_skipped_chunks;
 
     pf_Read = stream_Read;
@@ -422,6 +424,7 @@ static void stream_ExitWrite(void)
 static int stream_InitWrite( const char *psz_arg, size_t i_len, bool b_append )
 {
     i_output_fd = OpenFile( psz_arg, false, b_append );
+    if ( i_output_fd < 0 ) return -1;
 
     pf_Write = stream_Write;
     pf_ExitWrite = stream_ExitWrite;
@@ -511,8 +514,14 @@ static int file_InitRead( const char *psz_arg, size_t i_len,
     }
 
     i_input_fd = OpenFile( psz_arg, true, false );
+    if ( i_input_fd < 0 )
+    {
+        free(psz_aux_file);
+        return -1;
+    }
     p_input_aux = OpenAuxFile( psz_aux_file, true, false );
     free( psz_aux_file );
+    if ( p_input_aux == NULL ) return -1;
 
     lseek( i_input_fd, (off_t)i_len * i_nb_skipped_chunks, SEEK_SET );
     fseeko( p_input_aux, 8 * i_nb_skipped_chunks, SEEK_SET );
@@ -572,8 +581,10 @@ static int file_InitWrite( const char *psz_arg, size_t i_len, bool b_append )
     if ( b_append )
         CheckFileSizes( psz_arg, psz_aux_file, i_len );
     i_output_fd = OpenFile( psz_arg, false, b_append );
+    if ( i_output_fd < 0 ) return -1;
     p_output_aux = OpenAuxFile( psz_aux_file, false, b_append );
     free( psz_aux_file );
+    if ( p_output_aux == NULL ) return -1;
 
     pf_Write = file_Write;
     pf_ExitWrite = file_ExitWrite;
@@ -590,29 +601,35 @@ static uint64_t i_input_dir_delay;
 
 static ssize_t dir_Read( void *p_buf, size_t i_len )
 {
-    ssize_t i_ret;
-try_again:
-    i_ret = file_Read( p_buf, i_len );
-    if ( !i_ret )
+    for ( ; ; )
     {
+        ssize_t i_ret = file_Read( p_buf, i_len );
+        if ( i_ret > 0 ) return i_ret;
+
         b_die = 0; /* we're not dead yet */
         close( i_input_fd );
         fclose( p_input_aux );
         i_input_fd = 0;
+        p_input_aux = NULL;
 
-        i_input_dir_file++;
-
-        i_input_fd = OpenDirFile( psz_input_dir_name, i_input_dir_file,
-                                  true, i_input_dir_len, &p_input_aux );
-        if ( i_input_fd < 0 )
+        for ( ; ; )
         {
-            msg_Err( NULL, "end of files reached" );
-            b_die = 1;
-            return 0;
+            i_input_dir_file++;
+
+            i_input_fd = OpenDirFile( psz_input_dir_name, i_input_dir_file,
+                                      true, i_input_dir_len, &p_input_aux );
+            if ( i_input_fd > 0 ) break;
+
+            if ( i_input_dir_file * i_rotate_size > i_first_stc + i_duration )
+            {
+                msg_Err( NULL, "end of files reached" );
+                b_die = 1;
+                return 0;
+            }
+
+            msg_Warn( NULL, "missing segment" );
         }
-        goto try_again;
     }
-    return i_ret;
 }
 
 static bool dir_Delay(void)
@@ -633,7 +650,7 @@ static bool dir_Delay(void)
 static void dir_ExitRead(void)
 {
     free( psz_input_dir_name );
-    if ( i_input_fd )
+    if ( i_input_fd > 0 )
     {
         close( i_input_fd );
         fclose( p_input_aux );
@@ -663,21 +680,21 @@ static int dir_InitRead( const char *psz_arg, size_t i_len,
     i_input_dir_len = i_len;
     i_input_dir_file = GetDirFile( i_rotate_size, i_pos );
 
-    i_nb_skipped_chunks = LookupDirAuxFile( psz_input_dir_name,
-                                            i_input_dir_file, i_stc,
-                                            i_input_dir_len );
-    if ( i_nb_skipped_chunks < 0 )
+    for ( ; ; )
     {
-        /* Try at most one more chunk */
-        i_input_dir_file++;
         i_nb_skipped_chunks = LookupDirAuxFile( psz_input_dir_name,
                                                 i_input_dir_file, i_stc,
                                                 i_input_dir_len );
-        if ( i_nb_skipped_chunks < 0 )
+        if ( i_nb_skipped_chunks >= 0 ) break;
+
+        if ( i_input_dir_file * i_rotate_size > i_stc + i_duration )
         {
             msg_Err( NULL, "position not found" );
             return -1;
         }
+
+        i_input_dir_file++;
+        msg_Warn( NULL, "missing segment" );
     }
 
     i_input_fd = OpenDirFile( psz_input_dir_name, i_input_dir_file,
@@ -904,7 +921,6 @@ int main( int i_argc, char **pp_argv )
     int i_stc_fd = -1;
     off_t i_skip_chunks = 0, i_nb_chunks = -1;
     int64_t i_seek = 0;
-    uint64_t i_duration = 0;
     bool b_append = false;
     uint8_t *p_buffer, *p_read_buffer;
     size_t i_max_read_size, i_max_write_size;
