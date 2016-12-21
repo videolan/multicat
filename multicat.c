@@ -362,6 +362,7 @@ static int udp_InitWrite( const char *psz_arg, size_t i_len, bool b_append )
  * stream_*: FIFO and character device handlers
  *****************************************************************************/
 static off_t i_stream_nb_skips = 0;
+static ssize_t i_buf_offset = 0;
 
 static ssize_t stream_Read( void *p_buf, size_t i_len )
 {
@@ -375,7 +376,8 @@ static ssize_t stream_Read( void *p_buf, size_t i_len )
         return 0;
     }
 
-    if ( (i_ret = read( i_input_fd, p_buf, i_len )) < 0 )
+    if ( (i_ret = read( i_input_fd, p_buf + i_buf_offset,
+                        i_len - i_buf_offset )) < 0 )
     {
         msg_Err( NULL, "read error (%s)", strerror(errno) );
         b_die = b_error = 1;
@@ -383,6 +385,13 @@ static ssize_t stream_Read( void *p_buf, size_t i_len )
     }
 
     i_stc = pf_Date();
+    i_buf_offset += i_ret;
+
+    if ( i_buf_offset < i_len )
+        return 0;
+
+    i_ret = i_buf_offset;
+    i_buf_offset = 0;
     if ( i_stream_nb_skips )
     {
         i_stream_nb_skips--;
