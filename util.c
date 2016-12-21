@@ -555,6 +555,7 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
     in_addr_t i_raw_srcaddr = INADDR_ANY; 
     int i_raw_srcport = 0;
     char *psz_ifname = NULL;
+    int hincl = 1;
 
     bind_addr.ss.ss_family = AF_UNSPEC;
     connect_addr.ss.ss_family = AF_UNSPEC;
@@ -709,6 +710,13 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
                 i_raw_srcaddr, connect_addr.sin.sin_addr.s_addr, i_raw_srcport,
                 ntohs(connect_addr.sin.sin_port), i_ttl, i_tos, 0);
             i_fd = socket( AF_INET, SOCK_RAW, IPPROTO_RAW );
+#ifdef __FreeBSD__
+            if ( setsockopt( i_fd, IPPROTO_IP, IP_HDRINCL, &hincl, sizeof(hincl)) == -1 )
+            {
+                msg_Err( NULL, "unable to set socket (%s)", strerror(errno) );
+                exit(EXIT_FAILURE);
+            }
+#endif
         } else
             i_fd = socket( i_family, *pb_tcp ? SOCK_STREAM : SOCK_DGRAM, 0);
 
