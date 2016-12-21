@@ -281,7 +281,7 @@ static ssize_t raw_Write( const void *p_buf, size_t i_len )
     ssize_t i_ret;
     struct iovec iov[2];
 
-    #ifdef __FAVOR_BSD
+    #if defined(__FreeBSD__)
     pktheader.udph.uh_ulen
     #else
     pktheader.udph.len

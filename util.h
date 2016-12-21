@@ -24,7 +24,7 @@
 #include <netinet/udp.h>
 #include <netinet/ip.h>
 
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(__FreeBSD__)
 #define POLLRDHUP 0
 /* uClibc may does not have clock_nanosleep() */
 #elif !defined (__UCLIBC__) || \
@@ -58,11 +58,15 @@ typedef union
  * Raw udp packet structure with flexible-array payload
  *****************************************************************************/
 struct udprawpkt {
-#ifndef __APPLE__
+#if !defined(__APPLE__)
+#if defined(__FreeBSD__)
+    struct  ip iph;
+#else
     struct  iphdr iph;
-    struct  udphdr udph;
-    uint8_t payload[];
 #endif
+    struct  udphdr udph;
+#endif
+    uint8_t payload[];
 } __attribute__((packed));
 
 

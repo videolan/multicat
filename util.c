@@ -451,7 +451,11 @@ static void RawFillHeaders(struct udprawpkt *dgram,
                         uint8_t ttl, uint8_t tos, uint16_t len)
 {
 #ifndef __APPLE__
+#if defined(__FreeBSD__)
+    struct ip *iph = &(dgram->iph);
+#else
     struct iphdr *iph = &(dgram->iph);
+#endif
     struct udphdr *udph = &(dgram->udph);
 
 #ifdef DEBUG_SOCKET
@@ -464,6 +468,26 @@ static void RawFillHeaders(struct udprawpkt *dgram,
     printf("Filling raw header (%p) (%s:%u -> %s:%u)\n", dgram, ipsrc_str, portsrc, ipdst_str, portdst);
 #endif
 
+#if defined(__FreeBSD__)
+    // Fill ip header
+    iph->ip_hl    = 5;              // ip header with no specific option
+    iph->ip_v     = 4;
+    iph->ip_tos   = tos;
+    iph->ip_len   = sizeof(struct udprawpkt) + len; // auto-htoned ?
+    iph->ip_id    = htons(0);       // auto-generated if frag_off (flags) = 0 ?
+    iph->ip_off   = 0;
+    iph->ip_ttl   = ttl;
+    iph->ip_p     = IPPROTO_UDP;
+    iph->ip_sum   = 0;
+    iph->ip_src.s_addr = ipsrc;
+    iph->ip_dst.s_addr = ipdst;
+
+    // Fill udp header
+    udph->uh_sport = htons(portsrc);
+    udph->uh_dport = htons(portdst);
+    udph->uh_ulen  = htons(sizeof(struct udphdr) + len);
+    udph->uh_sum   = 0;
+#else
     // Fill ip header
     iph->ihl      = 5;              // ip header with no specific option
     iph->version  = 4;
@@ -478,17 +502,11 @@ static void RawFillHeaders(struct udprawpkt *dgram,
     iph->daddr    = ipdst;
 
     // Fill udp header
-    #ifdef __FAVOR_BSD
-    udph->uh_sport = htons(portsrc);
-    udph->uh_dport = htons(portdst);
-    udph->uh_ulen  = htons(sizeof(struct udphdr) + len);
-    udph->uh_sum   = 0;
-    #else
     udph->source = htons(portsrc);
     udph->dest   = htons(portdst);
     udph->len    = htons(sizeof(struct udphdr) + len);
     udph->check  = 0;
-    #endif
+#endif
 
     // Compute ip header checksum. Computed by kernel when frag_off = 0 ?
     //iph->check = csum((unsigned short *)iph, sizeof(struct iphdr));
