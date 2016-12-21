@@ -721,7 +721,7 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
 
             if ( bind_addr.ss.ss_family != AF_UNSPEC )
             {
-                #ifndef __APPLE__
+                #if !defined(__APPLE__) && !defined(__FreeBSD__)
                 if ( IN6_IS_ADDR_MULTICAST( &bind_addr.sin6.sin6_addr ) )
                 {
                     struct ipv6_mreq imr;
