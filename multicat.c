@@ -44,6 +44,10 @@
 #include <sys/ioctl.h>
 #include <syslog.h>
 
+#ifdef __FreeBSD__
+#   include <sys/uio.h>
+#endif
+
 #ifdef SIOCGSTAMPNS
 #   define HAVE_TIMESTAMPS
 #endif
