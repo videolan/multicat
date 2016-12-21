@@ -288,6 +288,10 @@ static ssize_t raw_Write( const void *p_buf, size_t i_len )
     #endif
     = htons(sizeof(struct udphdr) + i_len);
 
+    #if defined(__FreeBSD__)
+    pktheader.iph.ip_len = htons(sizeof(struct udprawpkt) + i_len);
+    #endif
+
     iov[0].iov_base = &pktheader;
     iov[0].iov_len = sizeof(struct udprawpkt);
 
