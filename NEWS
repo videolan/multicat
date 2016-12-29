@@ -5,6 +5,7 @@ Changes between 2.1 and 2.2:
   * Various portability fixes
   * Fix off-by-one error in directory input
   * Don't bail out on missing segments
+  * Add option to shift segment start
 
 Changes between 2.0 and 2.1:
 ----------------------------

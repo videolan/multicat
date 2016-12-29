@@ -162,6 +162,11 @@ therefore possible to pass absolute (positive) dates to -k.
 There is no built-in expiration of files in multicat; to avoid filling up the
 partition, it is necessary to run multicat_expire.sh every hour.
 
+The duration of the segments may be specified with -r. It is also advised to
+add an offset with -O (typically a per-stream random number of up to the
+segment duration minus one) to avoid having all multicat processes rotate
+files exactly at the same time, resulting in a surge in CPU usage and disk I/O.
+
 
 Using OffseTS
 =============

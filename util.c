@@ -1,7 +1,7 @@
 /*****************************************************************************
  * util.c: Utils for the multicat suite
  *****************************************************************************
- * Copyright (C) 2004, 2009, 2011, 2015 VideoLAN
+ * Copyright (C) 2004, 2009, 2011, 2015-2016 VideoLAN
  * $Id$
  *
  * Authors: Christophe Massiot <massiot@via.ecp.fr>
@@ -1179,14 +1179,15 @@ void CheckFileSizes( const char *psz_file, const char *psz_aux_file,
 /*****************************************************************************
  * GetDirFile: return the prefix of the file according to the STC
  *****************************************************************************/
-uint64_t GetDirFile( uint64_t i_rotate_size, int64_t i_wanted )
+uint64_t GetDirFile( uint64_t i_rotate_size, uint64_t i_rotate_offset,
+                     int64_t i_wanted )
 {
     if ( i_wanted <= 0 )
         i_wanted += real_Date();
     if ( i_wanted <= 0 )
         return 0;
 
-    return i_wanted / i_rotate_size;
+    return (i_wanted - i_rotate_offset) / i_rotate_size;
 }
 
 /*****************************************************************************

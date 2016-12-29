@@ -1,7 +1,7 @@
 /*****************************************************************************
  * multicat.c: netcat-equivalent for multicast
  *****************************************************************************
- * Copyright (C) 2009, 2011-2012, 2015 VideoLAN
+ * Copyright (C) 2009, 2011-2012, 2015-2016 VideoLAN
  * $Id$
  *
  * Authors: Christophe Massiot <massiot@via.ecp.fr>
@@ -85,6 +85,7 @@ static bool b_input_udp = false, b_output_udp = false;
 static size_t i_asked_payload_size = DEFAULT_PAYLOAD_SIZE;
 static size_t i_rtp_header_size = RTP_HEADER_SIZE;
 static uint64_t i_rotate_size = DEFAULT_ROTATE_SIZE;
+static uint64_t i_rotate_offset = DEFAULT_ROTATE_OFFSET;
 static uint64_t i_duration = 0;
 static struct udprawpkt pktheader;
 static bool b_raw_packets = false;
@@ -109,7 +110,7 @@ static void (*pf_ExitWrite)(void);
 
 static void usage(void)
 {
-    msg_Raw( NULL, "Usage: multicat [-i <RT priority>] [-l <syslogtag>] [-t <ttl>] [-X] [-T <file name>] [-f] [-p <PCR PID>] [-C] [-P] [-s <chunks>] [-n <chunks>] [-k <start time>] [-d <duration>] [-a] [-r <file duration>] [-S <SSRC IP>] [-u] [-U] [-m <payload size>] [-R <RTP header size>] [-w] <input item> <output item>" );
+    msg_Raw( NULL, "Usage: multicat [-i <RT priority>] [-l <syslogtag>] [-t <ttl>] [-X] [-T <file name>] [-f] [-p <PCR PID>] [-C] [-P] [-s <chunks>] [-n <chunks>] [-k <start time>] [-d <duration>] [-a] [-r <file duration>] [-O <rotate offset>] [-S <SSRC IP>] [-u] [-U] [-m <payload size>] [-R <RTP header size>] [-w] <input item> <output item>" );
     msg_Raw( NULL, "    item format: <file path | device path | FIFO path | directory path | network host>" );
     msg_Raw( NULL, "    host format: [<connect addr>[:<connect port>]][@[<bind addr][:<bind port>]]" );
     msg_Raw( NULL, "    -X: also pass-through all packets to stdout" );
@@ -124,6 +125,7 @@ static void usage(void)
     msg_Raw( NULL, "    -d: exit after definite time (in 27 MHz units)" );
     msg_Raw( NULL, "    -a: append to existing destination file (risky)" );
     msg_Raw( NULL, "    -r: in directory mode, rotate file after this duration (default: 97200000000 ticks = 1 hour)" );
+    msg_Raw( NULL, "    -O: in directory mode, rotate file after duration + this offset (default: 0 tick = calendar hour)" );
     msg_Raw( NULL, "    -S: overwrite or create RTP SSRC" );
     msg_Raw( NULL, "    -u: source has no RTP header" );
     msg_Raw( NULL, "    -U: destination has no RTP header" );
@@ -637,7 +639,8 @@ static ssize_t dir_Read( void *p_buf, size_t i_len )
                                       true, i_input_dir_len, &p_input_aux );
             if ( i_input_fd > 0 ) break;
 
-            if ( i_input_dir_file * i_rotate_size > i_first_stc + i_duration )
+            if ( i_input_dir_file * i_rotate_size + i_rotate_offset >
+                 i_first_stc + i_duration )
             {
                 msg_Err( NULL, "end of files reached" );
                 b_die = 1;
@@ -695,7 +698,7 @@ static int dir_InitRead( const char *psz_arg, size_t i_len,
 
     psz_input_dir_name = strdup( psz_arg );
     i_input_dir_len = i_len;
-    i_input_dir_file = GetDirFile( i_rotate_size, i_pos );
+    i_input_dir_file = GetDirFile( i_rotate_size, i_rotate_offset, i_pos );
 
     for ( ; ; )
     {
@@ -704,7 +707,8 @@ static int dir_InitRead( const char *psz_arg, size_t i_len,
                                                 i_input_dir_len );
         if ( i_nb_skipped_chunks >= 0 ) break;
 
-        if ( i_input_dir_file * i_rotate_size > i_stc + i_duration )
+        if ( i_input_dir_file * i_rotate_size + i_rotate_offset >
+             i_stc + i_duration )
         {
             msg_Err( NULL, "position not found" );
             return -1;
@@ -734,7 +738,7 @@ static uint64_t i_output_dir_file;
 
 static ssize_t dir_Write( const void *p_buf, size_t i_len )
 {
-    uint64_t i_dir_file = GetDirFile( i_rotate_size, i_stc );
+    uint64_t i_dir_file = GetDirFile( i_rotate_size, i_rotate_offset, i_stc );
     if ( !i_output_fd || i_dir_file != i_output_dir_file )
     {
         if ( i_output_fd )
@@ -946,7 +950,7 @@ int main( int i_argc, char **pp_argv )
     sigset_t set;
 
     /* Parse options */
-    while ( (c = getopt( i_argc, pp_argv, "i:l:t:XT:fp:CPs:n:k:d:ar:S:uUm:R:wh" )) != -1 )
+    while ( (c = getopt( i_argc, pp_argv, "i:l:t:XT:fp:CPs:n:k:d:ar:O:S:uUm:R:wh" )) != -1 )
     {
         switch ( c )
         {
@@ -1012,6 +1016,10 @@ int main( int i_argc, char **pp_argv )
 
         case 'r':
             i_rotate_size = strtoull( optarg, NULL, 0 );
+            break;
+
+        case 'O':
+            i_rotate_offset = strtoull( optarg, NULL, 0 );
             break;
 
         case 'S':

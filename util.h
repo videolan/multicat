@@ -1,7 +1,7 @@
 /*****************************************************************************
  * util.h: Utils for the multicat suite
  *****************************************************************************
- * Copyright (C) 2009, 2011, 2014-2015 VideoLAN
+ * Copyright (C) 2009, 2011, 2014-2016 VideoLAN
  * $Id$
  *
  * Authors: Christophe Massiot <massiot@via.ecp.fr>
@@ -36,6 +36,7 @@
 #define DEFAULT_PORT 1234
 #define DEFAULT_PAYLOAD_SIZE 1316
 #define DEFAULT_ROTATE_SIZE UINT64_C(97200000000)
+#define DEFAULT_ROTATE_OFFSET UINT64_C(0)
 #define TS_SIZE 188
 #define RTP_HEADER_SIZE 12
 
@@ -102,7 +103,8 @@ FILE *OpenAuxFile( const char *psz_arg, bool b_read, bool b_append );
 off_t LookupAuxFile( const char *psz_arg, int64_t i_wanted, bool b_absolute );
 void CheckFileSizes( const char *psz_file, const char *psz_aux_file,
                      size_t i_payload_size );
-uint64_t GetDirFile( uint64_t i_rotate_size, int64_t i_wanted );
+uint64_t GetDirFile( uint64_t i_rotate_size, uint64_t i_rotate_offset,
+                     int64_t i_wanted );
 int OpenDirFile( const char *psz_dir_path, uint64_t i_file, bool b_read,
                  size_t i_payload_size, FILE **pp_aux_file );
 off_t LookupDirAuxFile( const char *psz_dir_path, uint64_t i_file,
