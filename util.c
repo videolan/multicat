@@ -404,7 +404,11 @@ static struct addrinfo *ParseNodeService( char *_psz_string, char **ppsz_end,
         struct in_addr addr;
         if ( inet_aton( psz_node, &addr ) != 0 )
         {
-            struct sockaddr_in *p_sin = malloc( sizeof(struct sockaddr_in) );
+            uint8_t *p_buffer = malloc( sizeof(struct addrinfo) +
+                                        sizeof(struct sockaddr_in) );
+            p_res = (struct addrinfo *)p_buffer;
+            struct sockaddr_in *p_sin =
+                (struct sockaddr_in *)(p_buffer + sizeof(struct addrinfo));
             p_sin->sin_family = AF_INET;
             if ( psz_port != NULL )
                 p_sin->sin_port = ntohs( atoi( psz_port ) );
@@ -412,7 +416,6 @@ static struct addrinfo *ParseNodeService( char *_psz_string, char **ppsz_end,
                 p_sin->sin_port = 0;
             p_sin->sin_addr = addr;
 
-            p_res = malloc( sizeof(struct addrinfo) );
             p_res->ai_family = AF_INET;
             p_res->ai_socktype = SOCK_DGRAM;
             p_res->ai_protocol = 0;

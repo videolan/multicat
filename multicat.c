@@ -1288,6 +1288,7 @@ dropped_packet:
     }
 
     free(pi_pid_cc_table);
+    free(p_buffer);
 
     pf_ExitRead();
     pf_ExitWrite();
