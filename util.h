@@ -76,6 +76,7 @@ struct udprawpkt {
  *****************************************************************************/
  struct opensocket_opt {
     struct udprawpkt *p_raw_pktheader;
+    bool *pb_multicast;
  };
 
 

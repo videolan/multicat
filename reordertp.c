@@ -1,8 +1,7 @@
 /*****************************************************************************
  * reordertp.c: rebuild an RTP stream from several aggregated links
  *****************************************************************************
- * Copyright (C) 2009, 2011, 2014-2015 VideoLAN
- * $Id$
+ * Copyright (C) 2009, 2011, 2014-2017 VideoLAN
  *
  * Authors: Christophe Massiot <massiot@via.ecp.fr>
  *
@@ -72,6 +71,7 @@ typedef struct input_t
 {
     int i_fd;
     bool b_tcp;
+    bool b_multicast;
     block_t *p_block;
     sockaddr_t peer;
 } input_t;
@@ -241,7 +241,8 @@ static int RetxGetFd(sockaddr_t **pp_sockaddr)
         i_nb_tries++;
         i_last_retx_input++;
         i_last_retx_input %= i_nb_inputs;
-        if ( p_inputs[i_last_retx_input].peer.so.sa_family != AF_UNSPEC )
+        if ( p_inputs[i_last_retx_input].peer.so.sa_family != AF_UNSPEC &&
+             !p_inputs[i_last_retx_input].b_multicast )
             break;
     }
 
@@ -445,11 +446,13 @@ int main( int i_argc, char **pp_argv )
     struct pollfd *pfd = NULL;
     int i_fd;
     bool b_tcp;
+    bool b_multicast = false;
 
 #define ADD_INPUT                                                           \
     p_inputs = realloc( p_inputs, ++i_nb_inputs * sizeof(input_t) );        \
     p_inputs[i_nb_inputs - 1].i_fd = i_fd;                                  \
     p_inputs[i_nb_inputs - 1].b_tcp = b_tcp;                                \
+    p_inputs[i_nb_inputs - 1].b_multicast = b_multicast;                    \
     p_inputs[i_nb_inputs - 1].p_block = NULL;                               \
     p_inputs[i_nb_inputs - 1].peer.so.sa_family = AF_UNSPEC;                \
     pfd = realloc( pfd, i_nb_inputs * sizeof(struct pollfd) );              \
@@ -533,8 +536,12 @@ int main( int i_argc, char **pp_argv )
 
     while ( optind < i_argc - 1 )
     {
+        struct opensocket_opt opt;
+        memset(&opt, 0, sizeof(struct opensocket_opt));
+        opt.pb_multicast = &b_multicast;
+
         i_fd = OpenSocket( pp_argv[optind], 0, DEFAULT_PORT, 0, NULL,
-                           &b_tcp, NULL );
+                           &b_tcp, &opt );
         if ( i_fd == -1 )
         {
             msg_Err( NULL, "unable to open input %s\n", pp_argv[optind] );

@@ -555,7 +555,7 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
     socklen_t i_sockaddr_len;
     bool b_host = false;
     bool b_raw_packets = false;
-    in_addr_t i_raw_srcaddr = INADDR_ANY; 
+    in_addr_t i_raw_srcaddr = INADDR_ANY;
     int i_raw_srcport = 0;
     char *psz_ifname = NULL;
 #ifdef __FreeBSD__
@@ -568,6 +568,9 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
     if ( pb_tcp == NULL )
         pb_tcp = &b_tcp;
     *pb_tcp = false;
+
+    if ( p_opt != NULL && p_opt->pb_multicast != NULL )
+        *p_opt->pb_multicast = false;
 
     psz_token2 = strrchr( psz_arg, ',' );
     if ( psz_token2 )
@@ -780,6 +783,9 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
                                       &connect_addr );
                         exit(EXIT_FAILURE);
                     }
+
+                    if ( p_opt != NULL && p_opt->pb_multicast != NULL )
+                        *p_opt->pb_multicast = true;
                 }
                 else
                 #endif
@@ -882,6 +888,9 @@ normal_bind:
             }
 #endif
         }
+
+        if ( p_opt != NULL && p_opt->pb_multicast != NULL )
+            *p_opt->pb_multicast = true;
     }
 
     if ( connect_addr.ss.ss_family != AF_UNSPEC )

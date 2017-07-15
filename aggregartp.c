@@ -1,8 +1,7 @@
 /*****************************************************************************
  * aggregartp.c: split an RTP stream for several contribution links
  *****************************************************************************
- * Copyright (C) 2009, 2011, 2014-2015 VideoLAN
- * $Id$
+ * Copyright (C) 2009, 2011, 2014-2017 VideoLAN
  *
  * Authors: Christophe Massiot <massiot@via.ecp.fr>
  *
@@ -345,10 +344,15 @@ int main( int i_argc, char **pp_argv )
 
     while ( optind < i_argc )
     {
+        bool b_multicast;
+        struct opensocket_opt opt;
+        memset(&opt, 0, sizeof(struct opensocket_opt));
+        opt.pb_multicast = &b_multicast;
+
         p_outputs = realloc( p_outputs, ++i_nb_outputs * sizeof(output_t) );
         p_outputs[i_nb_outputs - 1].i_fd = i_fd =
             OpenSocket( pp_argv[optind++], i_ttl, 0, DEFAULT_PORT,
-                        &p_outputs[i_nb_outputs - 1].i_weight, NULL, NULL );
+                        &p_outputs[i_nb_outputs - 1].i_weight, NULL, &opt );
         if ( p_outputs[i_nb_outputs - 1].i_fd == -1 )
         {
             msg_Err( NULL, "unable to open output socket" );
@@ -359,7 +363,7 @@ int main( int i_argc, char **pp_argv )
             p_outputs[i_nb_outputs - 1].i_remainder = 0;
         i_max_weight += p_outputs[i_nb_outputs - 1].i_weight;
 
-        if ( i_retx_fd == -1 )
+        if ( i_retx_fd == -1 && !b_multicast )
         {
             ADD_RETX
         }
