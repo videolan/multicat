@@ -1,3 +1,7 @@
+Changes between 2.2 and 2.3:
+----------------------------
+  * Fix potential segfault in aggregartp
+
 Changes between 2.1 and 2.2:
 ----------------------------
   * Various portability fixes

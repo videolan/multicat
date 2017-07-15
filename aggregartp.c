@@ -365,7 +365,7 @@ int main( int i_argc, char **pp_argv )
         }
     }
     msg_Dbg( NULL, "%d outputs weight %u%s", i_nb_outputs, i_max_weight,
-             i_retx_fd != -1 ? ", with retx" : "" );
+             i_nb_retx > 1 ? ", with retx" : "" );
 
     p_retx_block = malloc( sizeof(block_t) + RETX_HEADER_SIZE );
     p_retx_block->p_data = (uint8_t *)p_retx_block + sizeof(block_t);
@@ -389,7 +389,7 @@ int main( int i_argc, char **pp_argv )
     for ( ; ; )
     {
         uint64_t i_current_date;
-        if ( poll( pfd, i_nb_retx + 1, -1 ) < 0 )
+        if ( poll( pfd, i_nb_retx, -1 ) < 0 )
         {
             int saved_errno = errno;
             msg_Warn( NULL, "couldn't poll(): %s", strerror(errno) );
@@ -490,11 +490,11 @@ int main( int i_argc, char **pp_argv )
         }
 
         int i;
-        for ( i = 0; i < i_nb_retx; i++ )
+        for ( i = 1; i < i_nb_retx; i++ )
         {
-            if ( pfd[i + 1].revents & POLLIN )
+            if ( pfd[i].revents & POLLIN )
             {
-                RetxHandle( pfd[i + 1].fd );
+                RetxHandle( pfd[i].fd );
             }
         }
     }
