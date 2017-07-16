@@ -86,6 +86,7 @@ static void usage(void)
 {
     msg_Raw( NULL, "Usage: aggregartp [-i <RT priority>] [-l <syslogtag>] [-t <ttl>] [-w] [-o <SSRC IP>] [-U] [-x <retx buffer>] [-X <retx URL>] [-m <payload size>] [-R <RTP header>] @<src host> <dest host 1>[,<weight 1>] ... [<dest host N>,<weight N>]" );
     msg_Raw( NULL, "    host format: [<connect addr>[:<connect port>]][@[<bind addr][:<bind port>]]" );
+    msg_Raw( NULL, "    weight: integer, higher value means more capacity, or 0 for all packets" );
     msg_Raw( NULL, "    -w: overwrite RTP timestamps" );
     msg_Raw( NULL, "    -o: overwrite RTP SSRC" );
     msg_Raw( NULL, "    -U: prepend RTP header" );
@@ -137,6 +138,17 @@ static void SendBlock( int i_fd, struct sockaddr *p_sout,
             /* otherwise do not die because these errors can be transient */
             msg_Warn( NULL, "write error (%s)", strerror(errno) );
     }
+}
+
+/*****************************************************************************
+ * SendBlock0: send a block to all outputs with weight 0
+ *****************************************************************************/
+static void SendBlock0( block_t *p_block )
+{
+    int i;
+    for ( i = 0; i < i_nb_outputs; i++ )
+        if ( !p_outputs[i].i_weight )
+            SendBlock( p_outputs[i].i_fd, NULL, 0, p_block);
 }
 
 /*****************************************************************************
@@ -476,13 +488,18 @@ int main( int i_argc, char **pp_argv )
             }
 
             /* Output block */
-            output_t *p_output = NextOutput();
-            SendBlock( p_output->i_fd, NULL, 0, p_input_block );
+            SendBlock0( p_input_block );
 
-            p_output->i_weighted_size += (i_size + p_output->i_remainder)
-                                           / p_output->i_weight;
-            p_output->i_remainder = (i_size + p_output->i_remainder)
-                                           % p_output->i_weight;
+            if ( i_max_weight )
+            {
+                output_t *p_output = NextOutput();
+                SendBlock( p_output->i_fd, NULL, 0, p_input_block );
+
+                p_output->i_weighted_size += (i_size + p_output->i_remainder)
+                                               / p_output->i_weight;
+                p_output->i_remainder = (i_size + p_output->i_remainder)
+                                               % p_output->i_weight;
+            }
 
             RetxQueue( p_input_block, i_current_date );
             p_input_block = NULL;

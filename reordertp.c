@@ -83,6 +83,7 @@ static int i_output_fd;
 static input_t *p_inputs = NULL;
 static int i_nb_inputs = 0;
 static int b_udp = 0;
+static int b_redundance = 0;
 
 static block_t *p_first = NULL;
 static block_t **pp_retx = NULL;
@@ -114,9 +115,10 @@ static int i_last_retx_input = 0;
 
 static void usage(void)
 {
-    msg_Raw( NULL, "Usage: reordertp [-i <RT priority>] [-l <syslogtag>] [-t <ttl>] [-b <buffer length>] [-U] [-g <max gap>] [-j <max jitter>] [-r <# of clock ref>] [-n <max retx burst>] [-x <reorder/retx delay>] [-X <retx URL>] [-m <payload size>] [-R <RTP header>] <src host 1> ... [<src host N>] <dest host>" );
+    msg_Raw( NULL, "Usage: reordertp [-i <RT priority>] [-l <syslogtag>] [-t <ttl>] [-b <buffer length>] [-U] [-D] [-g <max gap>] [-j <max jitter>] [-r <# of clock ref>] [-n <max retx burst>] [-x <reorder/retx delay>] [-X <retx URL>] [-m <payload size>] [-R <RTP header>] <src host 1> ... [<src host N>] <dest host>" );
     msg_Raw( NULL, "    host format: [<connect addr>[:<connect port>]][@[<bind addr][:<bind port>]]" );
     msg_Raw( NULL, "    -U: strip RTP header" );
+    msg_Raw( NULL, "    -D: input has redundant packets" );
     msg_Raw( NULL, "    -b: buffer length in ms [default 400]" );
     msg_Raw( NULL, "    -g: max gap between two clock references in ms [default 300]" );
     msg_Raw( NULL, "    -j: max jitter in ms [default 150]" );
@@ -282,7 +284,9 @@ static void RetxCheck( uint64_t i_current_date )
 
             if ( i_current_seqnum == i_prev_seqnum )
             {
-                msg_Dbg( NULL, "duplicate RTP packet %hu", i_current_seqnum );
+                if ( !b_redundance )
+                    msg_Dbg( NULL, "duplicate RTP packet %hu",
+                             i_current_seqnum );
                 RetxDereference( p_current );
                 free( p_current );
                 continue;
@@ -459,7 +463,7 @@ int main( int i_argc, char **pp_argv )
     pfd[i_nb_inputs - 1].fd = i_fd;                                         \
     pfd[i_nb_inputs - 1].events = POLLIN | POLLERR | POLLRDHUP | POLLHUP;
 
-    while ( (c = getopt( i_argc, pp_argv, "i:l:t:b:g:j:r:n:x:X:Um:R:h" )) != -1 )
+    while ( (c = getopt( i_argc, pp_argv, "i:l:t:b:g:j:r:n:x:X:UDm:R:h" )) != -1 )
     {
         switch ( c )
         {
@@ -512,6 +516,10 @@ int main( int i_argc, char **pp_argv )
 
         case 'U':
             b_udp = 1;
+            break;
+
+        case 'D':
+            b_redundance = 1;
             break;
 
         case 'm':
