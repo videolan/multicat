@@ -50,7 +50,7 @@ multicat_validate: $(OBJ_MULTICAT_VALIDATE)
 	$(CC) -o $@ $(OBJ_MULTICAT_VALIDATE) $(LDLIBS)
 
 clean:
-	-rm -f multicat $(OBJ_MULTICAT) ingests $(OBJ_INGESTS) aggregartp $(OBJ_AGGREGARTP) reordertp $(OBJ_REORDERTP) offsets $(OBJ_OFFSETS) lasts $(OBJ_LASTS) multicat_validate
+	-rm -f multicat $(OBJ_MULTICAT) ingests $(OBJ_INGESTS) aggregartp $(OBJ_AGGREGARTP) reordertp $(OBJ_REORDERTP) offsets $(OBJ_OFFSETS) lasts $(OBJ_LASTS) multicat_validate $(OBJ_MULTICAT_VALIDATE)
 
 install: all
 	@install -d $(BIN)
