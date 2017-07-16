@@ -54,6 +54,9 @@
 #define DEFAULT_RETX_DELAY 200 /* ms */
 #define MIN_RETX_DELAY 10 /* ms */
 #define DEFAULT_MAX_RETX_BURST 15 /* packets */
+#define RETX_REFRACTORY_TRIGGER 100 /* uncorrected errors */
+#define RETX_REFRACTORY_PERIOD 15000 /* ms */
+#define RETX_REFRACTORY_RESET 3000 /* ms */
 
 /*****************************************************************************
  * Local declarations
@@ -112,6 +115,10 @@ static uint64_t i_retx_delay = DEFAULT_RETX_DELAY * 27000;
 static int i_retx_fd = -1;
 static unsigned int i_max_retx_burst = DEFAULT_MAX_RETX_BURST;
 static int i_last_retx_input = 0;
+static unsigned int i_retx_uncorrected_errors = 0;
+static uint64_t i_retx_uncorrected_errors_expiration = UINT64_MAX;
+static uint16_t i_last_output_seqnum = 0;
+static uint64_t i_retx_refractory_end = 0;
 
 static void usage(void)
 {
@@ -213,6 +220,40 @@ static void RetxPacketSent( block_t *p_block )
     for ( i = 0; i < i_nb_retx; i++ )
         if ( pp_retx[i] == p_block )
             pp_retx[i] = NULL;
+
+    uint16_t i_seqnum = p_block->i_seqnum;
+
+    if ( i_retx_refractory_end )
+    {
+        if ( p_block->i_date > i_retx_refractory_end )
+        {
+            msg_Warn( NULL, "now reenabling retx" );
+            i_retx_refractory_end = 0;
+        }
+    }
+    else if ( i_seqnum != i_last_output_seqnum + 1 )
+    {
+        if ( ++i_retx_uncorrected_errors >= RETX_REFRACTORY_TRIGGER )
+        {
+            msg_Warn( NULL, "too many errors, disabling retx for a while" );
+            i_retx_uncorrected_errors = 0;
+            i_retx_refractory_end =
+                p_block->i_date + RETX_REFRACTORY_PERIOD * 27000;
+        }
+        else
+        {
+            i_retx_uncorrected_errors_expiration =
+                p_block->i_date + RETX_REFRACTORY_RESET * 27000;
+        }
+    }
+    else if ( p_block->i_date > i_retx_uncorrected_errors_expiration )
+    {
+        i_retx_uncorrected_errors_expiration = UINT64_MAX;
+        i_retx_uncorrected_errors = 0;
+    }
+
+
+    i_last_output_seqnum = i_seqnum;
 }
 
 static void RetxDereference( block_t *p_block )
@@ -298,7 +339,8 @@ static void RetxCheck( uint64_t i_current_date )
                                             (i_prev_seqnum + 1)) % POW2_16;
                 sockaddr_t *p_sockaddr;
                 int i_fd;
-                if ( i_nb_packets <= i_max_retx_burst &&
+                if ( !i_retx_refractory_end &&
+                     i_nb_packets <= i_max_retx_burst &&
                      (i_fd = RetxGetFd(&p_sockaddr)) != -1 )
                 {
                     uint8_t p_buffer[RETX_HEADER_SIZE];
