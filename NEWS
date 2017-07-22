@@ -1,5 +1,6 @@
 Changes between 2.2 and 2.3:
 ----------------------------
+  * New VRRP-like implementation multilive
   * Fix potential segfault in aggregartp
   * Do not do retx in reordertp with multicast inputs
   * Add support for null weights in aggregartp and reordertp

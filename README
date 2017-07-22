@@ -214,3 +214,16 @@ reordertp @239.1.0.1:5004 239.254.0.1:5004 -X @:5006/tcp
 aggregartp @239.255.0.1:5004 239.1.0.1:5004 -X 192.168.0.2:5006/tcp
 
 (with TCP the listener must be started before the other)
+
+
+Using multilive
+===============
+
+Running a master at priority 1000 on multicast address 239.255.255.255:1025:
+
+multilive -y 1000 @239.255.255.255:1025 239.255.255.255:1025
+
+Running another master on a different machine at a higher priority (who will
+preempt the other master):
+
+multilive -y 1001 @239.255.255.255:1025 239.255.255.255:1025
