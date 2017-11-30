@@ -1,7 +1,7 @@
 /*****************************************************************************
  * util.h: Utils for the multicat suite
  *****************************************************************************
- * Copyright (C) 2009, 2011, 2014-2016 VideoLAN
+ * Copyright (C) 2009, 2011, 2014-2017 VideoLAN
  * $Id$
  *
  * Authors: Christophe Massiot <massiot@via.ecp.fr>
@@ -23,6 +23,7 @@
 
 #include <netinet/udp.h>
 #include <netinet/ip.h>
+#include <sys/types.h>
 
 #if defined(__APPLE__) || defined(__FreeBSD__)
 #define POLLRDHUP 0

@@ -1,7 +1,7 @@
 /*****************************************************************************
  * multicat.c: netcat-equivalent for multicast
  *****************************************************************************
- * Copyright (C) 2009, 2011-2012, 2015-2016 VideoLAN
+ * Copyright (C) 2009, 2011-2012, 2015-2017 VideoLAN
  * $Id$
  *
  * Authors: Christophe Massiot <massiot@via.ecp.fr>
@@ -43,10 +43,7 @@
 #include <poll.h>
 #include <sys/ioctl.h>
 #include <syslog.h>
-
-#ifdef __FreeBSD__
-#   include <sys/uio.h>
-#endif
+#include <sys/uio.h>
 
 #ifdef SIOCGSTAMPNS
 #   define HAVE_TIMESTAMPS
