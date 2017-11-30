@@ -31,28 +31,28 @@ $(OBJ_MULTICAT_VALIDATE): Makefile util.h
 $(OBJ_MULTILIVE): Makefile util.h
 
 multicat: $(OBJ_MULTICAT)
-	$(CC) -o $@ $(OBJ_MULTICAT) $(LDLIBS)
+	$(CC) $(LDFLAGS) -o $@ $(OBJ_MULTICAT) $(LDLIBS)
 
 ingests: $(OBJ_INGESTS)
-	$(CC) -o $@ $(OBJ_INGESTS) $(LDLIBS)
+	$(CC) $(LDFLAGS) -o $@ $(OBJ_INGESTS) $(LDLIBS)
 
 aggregartp: $(OBJ_AGGREGARTP)
-	$(CC) -o $@ $(OBJ_AGGREGARTP) $(LDLIBS)
+	$(CC) $(LDFLAGS) -o $@ $(OBJ_AGGREGARTP) $(LDLIBS)
 
 reordertp: $(OBJ_REORDERTP)
-	$(CC) -o $@ $(OBJ_REORDERTP) $(LDLIBS)
+	$(CC) $(LDFLAGS) -o $@ $(OBJ_REORDERTP) $(LDLIBS)
 
 offsets: $(OBJ_OFFSETS)
-	$(CC) -o $@ $(OBJ_OFFSETS) $(LDLIBS)
+	$(CC) $(LDFLAGS) -o $@ $(OBJ_OFFSETS) $(LDLIBS)
 
 lasts: $(OBJ_LASTS)
-	$(CC) -o $@ $(OBJ_LASTS) $(LDLIBS)
+	$(CC) $(LDFLAGS) -o $@ $(OBJ_LASTS) $(LDLIBS)
 
 multicat_validate: $(OBJ_MULTICAT_VALIDATE)
-	$(CC) -o $@ $(OBJ_MULTICAT_VALIDATE) $(LDLIBS)
+	$(CC) $(LDFLAGS) -o $@ $(OBJ_MULTICAT_VALIDATE) $(LDLIBS)
 
 multilive: $(OBJ_MULTILIVE)
-	$(CC) -o $@ $(OBJ_MULTILIVE) $(LDLIBS)
+	$(CC) $(LDFLAGS) -o $@ $(OBJ_MULTILIVE) $(LDLIBS)
 
 clean:
 	-rm -f multicat $(OBJ_MULTICAT) ingests $(OBJ_INGESTS) aggregartp $(OBJ_AGGREGARTP) reordertp $(OBJ_REORDERTP) offsets $(OBJ_OFFSETS) lasts $(OBJ_LASTS) multicat_validate $(OBJ_MULTICAT_VALIDATE) multilive $(OBJ_MULTILIVE)
