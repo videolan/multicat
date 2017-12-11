@@ -1,0 +1,10 @@
+*.o
+
+/aggregartp
+/ingests
+/lasts
+/multicat
+/multicat_validate
+/multilive
+/offsets
+/reordertp
