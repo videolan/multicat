@@ -60,14 +60,12 @@ typedef union
  * Raw udp packet structure with flexible-array payload
  *****************************************************************************/
 struct udprawpkt {
-#if !defined(__APPLE__)
-#if defined(__FreeBSD__)
+#if defined(__APPLE__) || defined(__FreeBSD__)
     struct  ip iph;
 #else
     struct  iphdr iph;
 #endif
     struct  udphdr udph;
-#endif
     uint8_t payload[];
 } __attribute__((packed));
 
