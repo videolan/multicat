@@ -887,10 +887,10 @@ normal_bind:
                 psz_ifname = NULL;
             }
 #endif
-        }
 
-        if ( p_opt != NULL && p_opt->pb_multicast != NULL )
-            *p_opt->pb_multicast = true;
+            if ( p_opt != NULL && p_opt->pb_multicast != NULL )
+                *p_opt->pb_multicast = true;
+        }
     }
 
     if ( connect_addr.ss.ss_family != AF_UNSPEC )
