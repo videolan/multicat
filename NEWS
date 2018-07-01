@@ -5,6 +5,7 @@ Changes between 2.2 and 2.3:
   * Do not do retx in reordertp with multicast inputs
   * Add support for null weights in aggregartp and reordertp
   * Add refractory period in case of too many errors in reordertp
+  * Build system fixes for macOS
 
 Changes between 2.1 and 2.2:
 ----------------------------
