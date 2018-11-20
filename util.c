@@ -905,34 +905,39 @@ normal_bind:
 
         if ( !*pb_tcp )
         {
-            if ( i_ttl )
+            if ( i_family == AF_INET
+                  && IN_MULTICAST(ntohl(connect_addr.sin.sin_addr.s_addr)) )
             {
-                if ( i_family == AF_INET
-                      && IN_MULTICAST(ntohl(connect_addr.sin.sin_addr.s_addr)) )
-                {
-                    if ( setsockopt( i_fd, IPPROTO_IP, IP_MULTICAST_TTL,
-                                     (void *)&i_ttl, sizeof(i_ttl) ) == -1 )
-                    {
-                        msg_Err( NULL, "couldn't set TTL (%s)",
-                                 strerror(errno) );
-                        PrintSocket( "socket definition:", &bind_addr,
-                                     &connect_addr );
-                        exit(EXIT_FAILURE);
-                    }
-                }
+                if ( p_opt != NULL && p_opt->pb_multicast != NULL )
+                    *p_opt->pb_multicast = true;
 
-                if ( i_family == AF_INET6
-                      && IN6_IS_ADDR_MULTICAST(&connect_addr.sin6.sin6_addr) )
+                if ( i_ttl &&
+                     setsockopt( i_fd, IPPROTO_IP, IP_MULTICAST_TTL,
+                                 (void *)&i_ttl, sizeof(i_ttl) ) == -1 )
                 {
-                    if ( setsockopt( i_fd, IPPROTO_IPV6, IPV6_MULTICAST_HOPS,
-                                     (void *)&i_ttl, sizeof(i_ttl) ) == -1 )
-                    {
-                        msg_Err( NULL, "couldn't set TTL (%s)",
-                                 strerror(errno) );
-                        PrintSocket( "socket definition:", &bind_addr,
-                                     &connect_addr );
-                        exit(EXIT_FAILURE);
-                    }
+                    msg_Err( NULL, "couldn't set TTL (%s)",
+                             strerror(errno) );
+                    PrintSocket( "socket definition:", &bind_addr,
+                                 &connect_addr );
+                    exit(EXIT_FAILURE);
+                }
+            }
+
+            if ( i_family == AF_INET6
+                  && IN6_IS_ADDR_MULTICAST(&connect_addr.sin6.sin6_addr) )
+            {
+                if ( p_opt != NULL && p_opt->pb_multicast != NULL )
+                    *p_opt->pb_multicast = true;
+
+                if ( i_ttl &&
+                     setsockopt( i_fd, IPPROTO_IPV6, IPV6_MULTICAST_HOPS,
+                                 (void *)&i_ttl, sizeof(i_ttl) ) == -1 )
+                {
+                    msg_Err( NULL, "couldn't set TTL (%s)",
+                             strerror(errno) );
+                    PrintSocket( "socket definition:", &bind_addr,
+                                 &connect_addr );
+                    exit(EXIT_FAILURE);
                 }
             }
 
