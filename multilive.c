@@ -315,9 +315,14 @@ int main( int i_argc, char **pp_argv )
 
             if ( announce_get_priority(p_buffer) < i_priority )
             {
-                /* Do not take over immediately to avoid fighting with
-                 * potential other idle nodes. */
-                i_master_expiration = i_current_date + i_master_expiration_skew;
+                if ( i_current_date + i_master_expiration_skew <
+                    i_master_expiration )
+                {
+                    /* Do not take over immediately to avoid fighting with
+                     * potential other idle nodes. */
+                    i_master_expiration =
+                        i_current_date + i_master_expiration_skew;
+                }
             }
             else
             {
