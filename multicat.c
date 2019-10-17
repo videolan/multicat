@@ -124,7 +124,7 @@ static void usage(void)
     msg_Raw( NULL, "    -r: in directory mode, rotate file after this duration (default: 97200000000 ticks = 1 hour)" );
     msg_Raw( NULL, "    -O: in directory mode, rotate file after duration + this offset (default: 0 tick = calendar hour)" );
     msg_Raw( NULL, "    -S: overwrite or create RTP SSRC" );
-    msg_Raw( NULL, "    -u: source has no RTP header" );
+    msg_Raw( NULL, "    -u: source has no RTP header, possibly a udp source" );
     msg_Raw( NULL, "    -U: destination has no RTP header" );
     msg_Raw( NULL, "    -m: size of the payload chunk, excluding optional RTP header (default 1316)" );
     msg_Raw( NULL, "    -R: size of the optional RTP header (default 12)" );
