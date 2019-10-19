@@ -86,7 +86,11 @@ Recording a multicast address to a file:
 
 multicat @239.255.0.1:5004 /tmp/myfile.ts
 
-This will also create file /tmp/myfile.aux. Playing back the file:
+Recording a udp multicast address to a file:
+
+multicat -u @239.255.0.1:5004 /tmp/myfile.ts
+
+These recordings will also create a file /tmp/myfile.aux. Playing back the file:
 
 multicat -p 68 /tmp/myfile.ts 239.255.0.2:5004
 
