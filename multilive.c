@@ -242,7 +242,7 @@ int main( int i_argc, char **pp_argv )
     for ( ; ; )
     {
         uint64_t i_current_date = wall_Date();
-        int i_timeout;
+
         if ( i_next_announce == UINT64_MAX )
         {
             if ( i_master_expiration <= i_current_date )
@@ -250,9 +250,6 @@ int main( int i_argc, char **pp_argv )
                 Up();
                 i_next_announce = i_current_date;
             }
-            else
-                i_timeout = (i_master_expiration - i_current_date) * 1000 /
-                            CLOCK_FREQ;
         }
 
         if ( i_next_announce <= i_current_date )
@@ -275,11 +272,16 @@ int main( int i_argc, char **pp_argv )
 
             i_current_date = wall_Date();
             i_next_announce += i_period;
-            i_timeout = (i_next_announce - i_current_date) * 1000 /
-                        CLOCK_FREQ;
-            if ( i_timeout < 0 )
-                i_timeout = 0;
         }
+
+        /* next action date */
+        uint64_t i_next_run = i_next_announce != UINT64_MAX ?
+            i_next_announce : i_master_expiration;
+
+        /* add 1 ms for rounding */
+        int i_timeout = ((i_next_run - i_current_date) * 1000 / CLOCK_FREQ) + 1;
+        if ( i_timeout < 0 )
+            i_timeout = 0;
 
         if ( poll( pfd, 1, i_timeout ) < 0 )
         {
