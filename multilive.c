@@ -40,13 +40,14 @@
 
 #include "util.h"
 
-#define CLOCK_FREQ          UINT64_C(27000000)
-#define DEFAULT_PRIORITY    1
-#define DEFAULT_PERIOD      (CLOCK_FREQ / 5)
-#define DEFAULT_DEAD        5
+#define CLOCK_FREQ              UINT64_C(27000000)
+#define DEFAULT_PRIORITY        1
+#define DEFAULT_PERIOD          (CLOCK_FREQ / 5)
+#define DEFAULT_DEAD            5
+#define DEFAULT_STARTUP_DELAY   0
 
-#define ANNOUNCE_SIZE       12
-#define ANNOUNCE_VERSION    1
+#define ANNOUNCE_SIZE           12
+#define ANNOUNCE_VERSION        1
 
 /*****************************************************************************
  * Announce format
@@ -115,6 +116,7 @@ static void usage(void)
     msg_Raw( NULL, "    -y: priority of this instance (32 bits) [1]" );
     msg_Raw( NULL, "    -p: periodicity of announces in 27 MHz units [27000000/5]" );
     msg_Raw( NULL, "    -d: number of periods after which the master is dead [5]" );
+    msg_Raw( NULL, "    -g: startup delay in 27Mhz units [0]" );
     exit(EXIT_FAILURE);
 }
 
@@ -127,9 +129,10 @@ int main( int i_argc, char **pp_argv )
     uint32_t i_priority = DEFAULT_PRIORITY;
     uint64_t i_period = DEFAULT_PERIOD;
     unsigned int i_dead = DEFAULT_DEAD;
+    uint64_t i_startup_delay = DEFAULT_STARTUP_DELAY;
     struct pollfd *pfd = malloc(sizeof(struct pollfd));
 
-    while ( (c = getopt( i_argc, pp_argv, "i:l:t:y:p:d:h" )) != -1 )
+    while ( (c = getopt( i_argc, pp_argv, "i:l:t:y:p:d:g:h" )) != -1 )
     {
         switch ( c )
         {
@@ -155,6 +158,10 @@ int main( int i_argc, char **pp_argv )
 
         case 'd':
             i_dead = strtoul( optarg, NULL, 0);
+            break;
+
+        case 'g':
+            i_startup_delay = strtoull( optarg, NULL, 0 );
             break;
 
         case 'h':
@@ -234,7 +241,7 @@ int main( int i_argc, char **pp_argv )
     msg_Dbg( NULL, "expiration skew: %"PRId64, i_master_expiration_skew );
 
     uint64_t i_master_expiration = i_period * i_dead + wall_Date() +
-                                   i_master_expiration_skew;
+                                   i_master_expiration_skew + i_startup_delay;
     Down();
 
     uint64_t i_next_announce = UINT64_MAX;
