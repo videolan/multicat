@@ -1,0 +1,4 @@
+option('hardened',
+    type : 'feature',
+    value : 'auto',
+    description : 'build with additional security options')
