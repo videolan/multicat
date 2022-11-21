@@ -603,11 +603,11 @@ int main( int i_argc, char **pp_argv )
     }
     msg_Dbg( NULL, "%d inputs", i_nb_inputs );
 
-    i_nb_retx = (i_buffer_length - MIN_RETX_DELAY) / i_retx_delay;
+    i_nb_retx = i_retx_fd != -1 ? (i_buffer_length - MIN_RETX_DELAY) / i_retx_delay : 0;
     pp_retx = malloc( i_nb_retx * sizeof(block_t *) );
     for ( i = 0; i < i_nb_retx; i++ )
         pp_retx[i] = NULL;
-    if ( i_retx_fd && i_nb_retx )
+    if ( i_retx_fd != -1 && i_nb_retx )
         msg_Dbg( NULL, "%d retx passes", i_nb_retx );
 
     i_output_fd = OpenSocket( pp_argv[optind], i_ttl, 0, DEFAULT_PORT, NULL,
