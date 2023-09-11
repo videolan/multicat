@@ -35,6 +35,10 @@ of lost packets via an additional UDP or TCP connection. ReordeRTP can also
 smooth up the reception of a stream from a link that is known to reorder
 and add jitter to packets.
 
+To minimize jitter and please IAT analysers, you can also use smooThS.
+SmooThS reads the RTP timestamp and actively waits for the proper time
+to send the packet.
+
 The multicat suite of applications is very lightweight and designed to
 operate in tight environments. Memory and CPU usages are kept to a minimum,
 and they feature only one thread of execution.
@@ -231,3 +235,15 @@ Running another master on a different machine at a higher priority (who will
 preempt the other master):
 
 multilive -y 1001 @239.255.255.255:1025 239.255.255.255:1025
+
+
+Using smooThS
+=============
+
+SmooThS command line is close to multicat's:
+
+smooths -c /etc/smooths.conf @239.255.255.255:5004
+
+where smooths.conf contains a list of destinations such as:
+
+239.255.255.254:5004

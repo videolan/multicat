@@ -40,7 +40,6 @@
 
 #include "util.h"
 
-#define CLOCK_FREQ              UINT64_C(27000000)
 #define DEFAULT_PRIORITY        1
 #define DEFAULT_PERIOD          (CLOCK_FREQ / 5)
 #define DEFAULT_DEAD            5

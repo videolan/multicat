@@ -40,6 +40,7 @@
 #define DEFAULT_ROTATE_OFFSET UINT64_C(0)
 #define TS_SIZE 188
 #define RTP_HEADER_SIZE 12
+#define CLOCK_FREQ UINT64_C(27000000)
 
 #define VERB_DBG  3
 #define VERB_INFO 2
@@ -76,6 +77,8 @@ struct udprawpkt {
  struct opensocket_opt {
     struct udprawpkt *p_raw_pktheader;
     bool *pb_multicast;
+    bool *pb_raw_packets;
+    bool *pb_udp;
  };
 
 

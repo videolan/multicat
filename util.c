@@ -569,8 +569,15 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
         pb_tcp = &b_tcp;
     *pb_tcp = false;
 
-    if ( p_opt != NULL && p_opt->pb_multicast != NULL )
-        *p_opt->pb_multicast = false;
+    if ( p_opt )
+    {
+        if ( p_opt->pb_multicast )
+            *p_opt->pb_multicast = false;
+        if ( p_opt->pb_raw_packets )
+            *p_opt->pb_raw_packets = false;
+        if ( p_opt->pb_udp )
+            *p_opt->pb_udp = false;
+    }
 
     psz_token2 = strrchr( psz_arg, ',' );
     if ( psz_token2 )
@@ -659,6 +666,11 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
                 i_tos = strtol( ARG_OPTION("tos="), NULL, 0 );
             else if ( IS_OPTION("tcp") )
                 *pb_tcp = true;
+            else if ( IS_OPTION("udp") )
+            {
+                if ( p_opt && p_opt->pb_udp )
+                    *p_opt->pb_udp = true;
+            }
             else if ( IS_OPTION("srcaddr=") )
             {
                 char *option = config_stropt( ARG_OPTION("srcaddr=") );
@@ -712,12 +724,14 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
     /* Socket configuration */
     if ( i_fd < 0 )
     {
-        if (b_raw_packets && b_host)
+        if (b_raw_packets && i_raw_srcaddr != INADDR_ANY && b_host)
         { 
             RawFillHeaders(p_opt->p_raw_pktheader,
                 i_raw_srcaddr, connect_addr.sin.sin_addr.s_addr, i_raw_srcport,
                 ntohs(connect_addr.sin.sin_port), i_ttl, i_tos, 0);
             i_fd = socket( AF_INET, SOCK_RAW, IPPROTO_RAW );
+            if ( p_opt->pb_raw_packets != NULL )
+                *p_opt->pb_raw_packets = true;
 #ifdef __FreeBSD__
             if ( setsockopt( i_fd, IPPROTO_IP, IP_HDRINCL, &hincl, sizeof(hincl)) == -1 )
             {
