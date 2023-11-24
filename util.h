@@ -96,6 +96,9 @@ uint64_t wall_Date( void );
 void wall_Sleep( uint64_t i_delay );
 uint64_t real_Date( void );
 void real_Sleep( uint64_t i_delay );
+int OpenSocketSafe( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
+                    uint16_t i_connect_port, unsigned int *pi_weight, bool *pb_tcp,
+                    struct opensocket_opt *p_opt);
 int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
                 uint16_t i_connect_port, unsigned int *pi_weight, bool *pb_tcp,
                 struct opensocket_opt *p_opt);
