@@ -45,6 +45,7 @@
 #include <sys/uio.h>
 #include <limits.h>
 #include <ctype.h>
+#include <time.h>
 
 #ifndef POLLRDHUP
 #   define POLLRDHUP 0
@@ -91,9 +92,11 @@ static volatile sig_atomic_t b_die = 0, b_error = 0, b_reload = 1;
 
 static void usage(void)
 {
-    msg_Raw( NULL, "Usage: smooths [-i <RT priority>] [-l <syslogtag>] [-L <latency>] -c <conf file> <input item>" );
+    msg_Raw( NULL, "Usage: smooths [-i <RT priority>] [-l <syslogtag>] [-L <latency>] [-F] -c <conf file> <input item>" );
+    msg_Raw( NULL, "    -L: latency in 27 MHz units" );
+    msg_Raw( NULL, "    -F: force an active loop instead of sleeping" );
+    msg_Raw( NULL, "    -c: path to configuration file containing one line per output item" );
     msg_Raw( NULL, "    item format: [<connect addr>[:<connect port>]][@[<bind addr][:<bind port>]]" );
-    msg_Raw( NULL, "    latency in 27000000 MHz units" );
     exit(EXIT_FAILURE);
 }
 
@@ -344,6 +347,7 @@ int main( int i_argc, char **pp_argv )
     const char *psz_syslog_tag = NULL;
     uint64_t i_latency = DEFAULT_LATENCY;
     const char *psz_conf_file = NULL;
+    bool b_sleep = true;
     int c;
     struct sigaction sa;
     sigset_t set;
@@ -352,7 +356,7 @@ int main( int i_argc, char **pp_argv )
     uint64_t i_next_stc = UINT64_MAX;
 
     /* Parse options */
-    while ( (c = getopt( i_argc, pp_argv, "i:l:L:c:h" )) != -1 )
+    while ( (c = getopt( i_argc, pp_argv, "i:l:L:c:Fh" )) != -1 )
     {
         switch ( c )
         {
@@ -370,6 +374,10 @@ int main( int i_argc, char **pp_argv )
 
         case 'c':
             psz_conf_file = optarg;
+            break;
+
+        case 'F':
+            b_sleep = false;
             break;
 
         case 'h':
@@ -512,6 +520,15 @@ int main( int i_argc, char **pp_argv )
 
             p_packet = malloc( sizeof(struct packet) );
             uchain_init(packet_to_uchain(p_packet));
+            continue;
+        }
+
+        if ( b_sleep )
+        {
+            if ( i_next_stc != UINT64_MAX )
+                wall_Sleep(i_next_stc - i_stc);
+            else
+                wall_Sleep(WARN_JITTER);
         }
     }
 
