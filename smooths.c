@@ -308,21 +308,21 @@ static void config_Free(void)
 }
 
 /*****************************************************************************
- * CompareSequences: Compare the sequence numbers from 2 RTP packets
+ * CompareTimestamps: Compare the timestamps from 2 RTP packets
  *****************************************************************************/
-static int CompareSequences( struct uchain *p_uchain1,
-                             struct uchain *p_uchain2 )
+static int CompareTimestamps( struct uchain *p_uchain1,
+                              struct uchain *p_uchain2 )
 {
     struct packet *p_packet1 = packet_from_uchain(p_uchain1);
     struct packet *p_packet2 = packet_from_uchain(p_uchain2);
-    uint16_t i_seqnum1 = rtp_get_seqnum(p_packet1->p_buffer);
-    uint16_t i_seqnum2 = rtp_get_seqnum(p_packet2->p_buffer);
+    uint32_t i_timestamp1 = rtp_get_timestamp(p_packet1->p_buffer);
+    uint32_t i_timestamp2 = rtp_get_timestamp(p_packet2->p_buffer);
 
-    int i_diff = i_seqnum1 - i_seqnum2;
+    int64_t i_diff = (int64_t)i_timestamp1 - i_timestamp2;
     if (i_diff > 0)
-        return (i_diff < 0x8000) ? i_diff : -i_diff;
+        return (i_diff < 0x80000000LL) ? 1 : -1;
     else if (i_diff < 0)
-        return (i_diff > -0x8000) ? i_diff : -i_diff;
+        return (i_diff > -0x80000000LL) ? -1 : 1;
     else
         return 0;
 }
@@ -354,6 +354,7 @@ int main( int i_argc, char **pp_argv )
     struct uchain packet_list;
     struct packet *p_packet;
     uint64_t i_next_stc = UINT64_MAX;
+    uint32_t i_next_timestamp = 0;
 
     /* Parse options */
     while ( (c = getopt( i_argc, pp_argv, "i:l:L:c:Fh" )) != -1 )
@@ -474,8 +475,7 @@ int main( int i_argc, char **pp_argv )
                     rtp_get_timestamp( p_current->p_buffer );
                 struct packet *p_next =
                     packet_from_uchain(ulist_peek(&packet_list));
-                uint32_t i_next_timestamp =
-                    rtp_get_timestamp( p_next->p_buffer );
+                i_next_timestamp = rtp_get_timestamp( p_next->p_buffer );
                 uint64_t i_diff =
                     ((UINT32_MAX + 1 + (uint64_t)i_next_timestamp -
                       i_current_timestamp) & UINT32_MAX) * 300;
@@ -508,13 +508,38 @@ int main( int i_argc, char **pp_argv )
                 continue;
             }
 
+            uint32_t i_timestamp = rtp_get_timestamp( p_packet->p_buffer );
+            if ( i_next_stc != UINT64_MAX ) {
+                /* Max admissible value in the past is -i_latency */
+                uint64_t i_drifted_timestamp = i_timestamp + i_latency / 300;
+                uint64_t i_diff = ((uint64_t)UINT32_MAX + 1 +
+                                   (uint64_t)i_drifted_timestamp -
+                                   (uint64_t)i_next_timestamp) %
+                                  ((uint64_t)UINT32_MAX + 1);
+                /* Max admissible value in the future is 2*i_latency */
+                if ( i_diff > 3 * i_latency / 300 )
+                {
+                    struct uchain *p_uchain, *p_tmp;
+                    msg_Warn( NULL,
+                        "resetting buffer due to too long delay %"PRIu64" ms",
+                        i_diff / 90 );
+                    ulist_delete_foreach (&packet_list, p_uchain, p_tmp)
+                    {
+                        free(packet_from_uchain(p_uchain));
+                    }
+                    ulist_init(&packet_list);
+                    i_next_stc = UINT64_MAX;
+                }
+            }
+
             /* Reorder packet if needed */
             ulist_bubble_reverse(&packet_list, packet_to_uchain(p_packet),
-                                 CompareSequences);
+                                 CompareTimestamps);
 
             if ( i_next_stc == UINT64_MAX )
             {
                 i_next_stc = i_stc + i_latency;
+                i_next_timestamp = i_timestamp;
                 msg_Warn( NULL, "resetting CR due to empty buffer" );
             }
 
