@@ -537,9 +537,9 @@ static char *config_stropt( char *psz_string )
     return ret;
 }
 
-int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
-                uint16_t i_connect_port, unsigned int *pi_weight, bool *pb_tcp,
-                struct opensocket_opt *p_opt)
+int OpenSocketSafe( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
+                    uint16_t i_connect_port, unsigned int *pi_weight, bool *pb_tcp,
+                    struct opensocket_opt *p_opt)
 {
     sockaddr_t bind_addr, connect_addr;
     int i_fd = -1, i;
@@ -698,7 +698,7 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
           && bind_addr.ss.ss_family != connect_addr.ss.ss_family )
     {
         msg_Err( NULL, "incompatible address types" );
-        exit(EXIT_FAILURE);
+        return -2;
     }
     if ( bind_addr.ss.ss_family != AF_UNSPEC )
         i_family = bind_addr.ss.ss_family;
@@ -707,7 +707,7 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
     else
     {
         msg_Err( NULL, "ambiguous address declaration" );
-        exit(EXIT_FAILURE);
+        return -2;
     }
     i_sockaddr_len = (i_family == AF_INET) ? sizeof(struct sockaddr_in) :
                      sizeof(struct sockaddr_in6);
@@ -716,7 +716,7 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
           && i_bind_if_index != i_connect_if_index )
     {
         msg_Err( NULL, "incompatible bind and connect interfaces" );
-        exit(EXIT_FAILURE);
+        return -2;
     }
     if ( i_connect_if_index ) i_bind_if_index = i_connect_if_index;
     else i_connect_if_index = i_bind_if_index;
@@ -725,7 +725,7 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
     if ( i_fd < 0 )
     {
         if (b_raw_packets && i_raw_srcaddr != INADDR_ANY && b_host)
-        { 
+        {
             RawFillHeaders(p_opt->p_raw_pktheader,
                 i_raw_srcaddr, connect_addr.sin.sin_addr.s_addr, i_raw_srcport,
                 ntohs(connect_addr.sin.sin_port), i_ttl, i_tos, 0);
@@ -736,7 +736,8 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
             if ( setsockopt( i_fd, IPPROTO_IP, IP_HDRINCL, &hincl, sizeof(hincl)) == -1 )
             {
                 msg_Err( NULL, "unable to set socket (%s)", strerror(errno) );
-                exit(EXIT_FAILURE);
+                close(i_fd);
+                return -2;
             }
 #endif
         } else
@@ -745,7 +746,8 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
         if ( i_fd < 0 )
         {
             msg_Err( NULL, "unable to open socket (%s)", strerror(errno) );
-            exit(EXIT_FAILURE);
+            close(i_fd);
+            return -2;
         }
 
         i = 1;
@@ -753,7 +755,8 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
                          sizeof(i) ) == -1 )
         {
             msg_Err( NULL, "unable to set socket (%s)", strerror(errno) );
-            exit(EXIT_FAILURE);
+            close(i_fd);
+            return -2;
         }
 
         if ( i_family == AF_INET6 )
@@ -764,7 +767,8 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
             {
                 msg_Err( NULL, "couldn't set interface index" );
                 PrintSocket( "socket definition:", &bind_addr, &connect_addr );
-                exit(EXIT_FAILURE);
+                close(i_fd);
+                return -2;
             }
 
             if ( bind_addr.ss.ss_family != AF_UNSPEC )
@@ -782,7 +786,8 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
                         msg_Err( NULL, "couldn't bind" );
                         PrintSocket( "socket definition:", &bind_addr,
                                      &connect_addr );
-                        exit(EXIT_FAILURE);
+                        close(i_fd);
+                        return -2;
                     }
 
                     imr.ipv6mr_multiaddr = bind_addr.sin6.sin6_addr;
@@ -795,7 +800,8 @@ int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
                         msg_Err( NULL, "couldn't join multicast group" );
                         PrintSocket( "socket definition:", &bind_addr,
                                       &connect_addr );
-                        exit(EXIT_FAILURE);
+                        close( i_fd );
+                        return -2;
                     }
 
                     if ( p_opt != NULL && p_opt->pb_multicast != NULL )
@@ -813,7 +819,8 @@ normal_bind:
             {
                 msg_Err( NULL, "couldn't bind" );
                 PrintSocket( "socket definition:", &bind_addr, &connect_addr );
-                exit(EXIT_FAILURE);
+                close( i_fd );
+                return -2;
             }
         }
     }
@@ -847,7 +854,8 @@ normal_bind:
                              strerror(errno) );
                     PrintSocket( "socket definition:", &bind_addr,
                                  &connect_addr );
-                    exit(EXIT_FAILURE);
+                    close( i_fd );
+                    return -2;
                 }
             }
             else
@@ -868,7 +876,8 @@ normal_bind:
                              strerror(errno) );
                     PrintSocket( "socket definition:", &bind_addr,
                                  &connect_addr );
-                    exit(EXIT_FAILURE);
+                    close( i_fd );
+                    return -2;
                 }
             }
             else
@@ -886,7 +895,8 @@ normal_bind:
                              strerror(errno) );
                     PrintSocket( "socket definition:", &bind_addr,
                                  &connect_addr );
-                    exit(EXIT_FAILURE);
+                    close( i_fd );
+                    return -2;
                 }
             }
 #ifdef SO_BINDTODEVICE
@@ -895,7 +905,8 @@ normal_bind:
                                  psz_ifname, strlen(psz_ifname)+1 ) < 0 ) {
                     msg_Err( NULL, "couldn't bind to device %s (%s)",
                              psz_ifname, strerror(errno) );
-                    exit(EXIT_FAILURE);
+                    close( i_fd );
+                    return -2;
                 }
                 free(psz_ifname);
                 psz_ifname = NULL;
@@ -914,7 +925,8 @@ normal_bind:
             msg_Err( NULL, "cannot connect socket (%s)",
                      strerror(errno) );
             PrintSocket( "socket definition:", &bind_addr, &connect_addr );
-            exit(EXIT_FAILURE);
+            close( i_fd );
+            return -2;
         }
 
         if ( !*pb_tcp )
@@ -933,7 +945,8 @@ normal_bind:
                              strerror(errno) );
                     PrintSocket( "socket definition:", &bind_addr,
                                  &connect_addr );
-                    exit(EXIT_FAILURE);
+                    close( i_fd );
+                    return -2;
                 }
             }
 
@@ -951,7 +964,8 @@ normal_bind:
                              strerror(errno) );
                     PrintSocket( "socket definition:", &bind_addr,
                                  &connect_addr );
-                    exit(EXIT_FAILURE);
+                    close( i_fd );
+                    return -2;
                 }
             }
 
@@ -963,7 +977,8 @@ normal_bind:
                     msg_Err( NULL, "couldn't set TOS (%s)", strerror(errno) );
                     PrintSocket( "socket definition:", &bind_addr,
                                  &connect_addr );
-                    exit(EXIT_FAILURE);
+                    close( i_fd );
+                    return -2;
                 }
             }
         }
@@ -976,7 +991,8 @@ normal_bind:
         {
             msg_Err( NULL, "couldn't listen (%s)", strerror(errno) );
             PrintSocket( "socket definition:", &bind_addr, &connect_addr );
-            exit(EXIT_FAILURE);
+            close( i_fd );
+            return -2;
         }
 
         while ( (i_new_fd = accept( i_fd, NULL, NULL )) < 0 )
@@ -985,7 +1001,8 @@ normal_bind:
             {
                 msg_Err( NULL, "couldn't accept (%s)", strerror(errno) );
                 PrintSocket( "socket definition:", &bind_addr, &connect_addr );
-                exit(EXIT_FAILURE);
+                close( i_fd );
+                return -2;
             }
         }
         close( i_fd );
@@ -993,6 +1010,18 @@ normal_bind:
     }
 
     return i_fd;
+}
+
+int OpenSocket( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
+                uint16_t i_connect_port, unsigned int *pi_weight, bool *pb_tcp,
+                struct opensocket_opt *p_opt)
+{
+    int ret = OpenSocketSafe(_psz_arg, i_ttl, i_bind_port,
+                             i_connect_port, pi_weight, pb_tcp, p_opt);
+    if (ret == -2)
+        exit(EXIT_FAILURE);
+
+    return ret;
 }
 
 /*****************************************************************************

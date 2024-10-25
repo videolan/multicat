@@ -236,6 +236,19 @@ preempt the other master):
 
 multilive -y 1001 @239.255.255.255:1025 239.255.255.255:1025
 
+Running multilive with a configuration file on multiple interfaces:
+
+The configuration file is a list of input and output peers defined by a custom
+optional name and a socket description, for instance:
+
+$ cat multilive.conf
+input1  @239.255.255.1:5004/ifaddr=192.168.1.1
+output1 239.255.255.1:5004@192.168.1.1
+input2  @239.255.255.2:5004/ifaddr=192.168.2.1
+output2 239.255.255.2:5004@192.168.2.1
+
+Then use:
+$ multilive -y 1000 -c multilive.conf
 
 Using smooThS
 =============
