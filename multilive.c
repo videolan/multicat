@@ -171,7 +171,7 @@ static int in_addr_get_ifindex(const in_addr_t *addr)
 
     int ifindex = 0;
     for (struct ifaddrs *i = ifa; i; i = i->ifa_next) {
-        if (i->ifa_addr->sa_family == AF_INET) {
+        if (i->ifa_addr && i->ifa_addr->sa_family == AF_INET) {
             struct sockaddr_in *in = (struct sockaddr_in *)i->ifa_addr;
             if (in->sin_addr.s_addr == *addr) {
                 ifindex = if_nametoindex(i->ifa_name);
