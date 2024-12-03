@@ -1103,8 +1103,10 @@ int main( int i_argc, char **pp_argv )
         current = &fds[0];
 
         struct pollfd *pollfd = current++;
-        if (pollfd->revents & POLLIN)
+        if (pollfd->revents & POLLIN) {
             nl_read();
+            continue;
+        }
 
         peer_foreach_input(&config.peers, peer) {
             if (peer->fd < 0)
