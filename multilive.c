@@ -332,8 +332,6 @@ static int peer_get_link(struct peer *peer)
         return -1;
 
     int ifindex = 0;
-    struct ifaddrs *ifa;
-    getifaddrs(&ifa);
     if (peer->input) {
         char *saveptr;
         strtok_r(args, "/", &saveptr);
@@ -365,7 +363,6 @@ static int peer_get_link(struct peer *peer)
             ifindex = in_addr_get_ifindex(&in_addr);
         }
     }
-    freeifaddrs(ifa);
     free(args);
 
     return ifindex;
