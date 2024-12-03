@@ -446,8 +446,7 @@ static struct peer *peer_create(const char *name, const char *conf, int ttl)
     struct peer *peer = malloc(sizeof (*peer));
     char *name_dup = name ? strdup(name) : NULL;
     char *conf_dup = strdup(conf);
-    char *args = strdup(conf);
-    if ( !peer || !conf_dup || !args || (!name_dup && name) )
+    if ( !peer || !conf_dup || (!name_dup && name) )
     {
         msg_Err( NULL, "allocation failed");
         free( peer );
