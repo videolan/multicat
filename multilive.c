@@ -343,8 +343,11 @@ static int peer_get_link(struct peer *peer)
             *arg++ = '\0';
 
             if (!strcmp(opt, "ifaddr")) {
-                in_addr_t in_addr = inet_addr(arg);
-                ifindex = in_addr_get_ifindex(&in_addr);
+                struct in_addr in;
+                if (inet_aton(arg, &in))
+                    ifindex = in_addr_get_ifindex(&in.s_addr);
+                else
+                    msg_Err( NULL, "invalid address %s", arg );
             } else if (!strcmp(opt, "ifname")) {
                 ifindex = if_nametoindex(arg);
             } else if (!strcmp(opt, "ifindex")) {
@@ -355,10 +358,16 @@ static int peer_get_link(struct peer *peer)
             }
         }
     } else {
-        const char *arg = strchr(args, '@');
+        char *arg = strchr(args, '@');
         if (arg++) {
-            in_addr_t in_addr = inet_addr(arg);
-            ifindex = in_addr_get_ifindex(&in_addr);
+            char *end = arg + strspn(arg, "0123456789.");
+            *end = '\0';
+
+            struct in_addr in;
+            if (inet_aton(arg, &in))
+                ifindex = in_addr_get_ifindex(&in.s_addr);
+            else
+                msg_Err( NULL, "invalid address %s", arg );
         }
     }
     free(args);
