@@ -476,8 +476,10 @@ static void RawFillHeaders(struct udprawpkt *dgram,
     struct in_addr insrc, indst;
     insrc.s_addr = ipsrc;
     indst.s_addr = ipdst;
-    strncpy(ipsrc_str, inet_ntoa(insrc), 16);
-    strncpy(ipdst_str, inet_ntoa(indst), 16);
+    strncpy(ipsrc_str, inet_ntoa(insrc), 15);
+    ipsrc_str[15] = '\0';
+    strncpy(ipdst_str, inet_ntoa(indst), 15);
+    ipdst_str[15] = '\0';
     printf("Filling raw header (%p) (%s:%u -> %s:%u)\n", dgram, ipsrc_str, portsrc, ipdst_str, portdst);
 #endif
 
