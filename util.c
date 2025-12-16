@@ -457,9 +457,19 @@ static void RawFillHeaders(struct udprawpkt *dgram,
 #if defined(__FreeBSD__)
     struct ip *iph = &(dgram->iph);
 #else
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Waddress-of-packed-member"
     struct iphdr *iph = &(dgram->iph);
+#pragma GCC diagnostic pop
 #endif
+#endif
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Waddress-of-packed-member"
     struct udphdr *udph = &(dgram->udph);
+#pragma GCC diagnostic pop
+#endif
 
 #ifdef DEBUG_SOCKET
     char ipsrc_str[16], ipdst_str[16];
