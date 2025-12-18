@@ -827,11 +827,6 @@ normal_bind:
 
     if ( !*pb_tcp )
     {
-        /* Increase the receive buffer size to 1/2MB (8Mb/s during 1/2s) to
-         * avoid packet loss caused by scheduling problems */
-        i = 0x80000;
-        setsockopt( i_fd, SOL_SOCKET, SO_RCVBUF, (void *) &i, sizeof( i ) );
-
         /* Join the multicast group if the socket is a multicast address */
         if ( bind_addr.ss.ss_family == AF_INET
               && IN_MULTICAST( ntohl(bind_addr.sin.sin_addr.s_addr)) )
