@@ -682,6 +682,8 @@ int OpenSocketSafe( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
                 i_raw_srcport = strtol( ARG_OPTION("srcport="), NULL, 0 );
             else if ( IS_OPTION("fd=") )
                 i_fd = strtol( ARG_OPTION("fd="), NULL, 0 );
+            else if ( IS_OPTION("rcvbufsz=") )
+                i_rcvbufsz = strtol( ARG_OPTION("rcvbufsz="), NULL, 0 );
             else
                 msg_Warn( NULL, "unrecognized option %s", psz_token2 );
 
