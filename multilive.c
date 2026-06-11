@@ -42,6 +42,7 @@
 #include <fcntl.h>
 #include <ifaddrs.h>
 #include <net/if.h>
+#include <assert.h>
 
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
@@ -439,7 +440,8 @@ static int peer_start(struct peer *peer)
     return 0;
 }
 
-static struct peer *peer_create(const char *name, const char *conf, int ttl)
+static struct peer *peer_create(const char *name, bool input, const char *conf,
+                                int ttl)
 {
     if ( !conf )
     {
@@ -460,7 +462,7 @@ static struct peer *peer_create(const char *name, const char *conf, int ttl)
     }
 
     peer_init(peer);
-    peer->input = *conf == '@';
+    peer->input = input;
     peer->ttl = ttl;
     peer->conf = conf_dup;
     peer->name = name_dup;
@@ -607,12 +609,13 @@ static void config_clean(struct config *config)
     config_init(config);
 }
 
-static struct peer *config_find_peer(struct config *config, const char *conf)
+static struct peer *config_find_peer(struct config *config, bool input,
+                                     const char *conf)
 {
     if (config && conf)
     {
         peer_foreach(&config->peers, peer) {
-            if (!strcmp(peer->conf, conf))
+            if (peer->input == input && !strcmp(peer->conf, conf))
                 return peer;
         }
     }
@@ -641,19 +644,36 @@ static int config_read(struct config *config, const char *config_file)
     struct uchain peers;
     ulist_init(&peers);
 
+    int line_nb = 1;
     while ((line = fgets( buffer, sizeof (buffer), file ) ))
     {
-        line += strspn(line, " \t");
         char *conf = strsep(&line, "\r\n");
+        conf += strspn(conf ?: "", " \t");
         char *name = strsep(&conf, " \t");
-        if (conf)
-            conf += strspn(conf, " \t");
-        if (!conf || !strlen(conf)) {
-            conf = name;
-            name = NULL;
+        conf += strspn(conf ?: "", " \t");
+        char *type = strsep(&conf, " \t");
+        conf += strspn(conf ?: "", " \t");
+
+        if ( !conf || !strlen(name) ) {
+            msg_Warn( NULL, "invalid configuration file %s at line %i",
+                      config_file, line_nb++);
+            continue;
         }
 
-        struct peer *peer = config_find_peer(config, conf);
+        bool input;
+        if ( !strcasecmp(type, "in") )
+            input = true;
+        else if ( !strcasecmp(type, "out") )
+            input = false;
+        else {
+            msg_Warn( NULL,
+                      "invalid configuration file %s at line %i, unknown peer "
+                      "type %s",
+                      config_file, line_nb++, type );
+            continue;
+        }
+
+        struct peer *peer = config_find_peer(config, input, conf);
         if (peer)
         {
             ulist_delete(&peer->uchain);
@@ -661,10 +681,11 @@ static int config_read(struct config *config, const char *config_file)
         }
         else
         {
-            peer = peer_create(name, conf, config->ttl);
+            peer = peer_create(name, input, conf, config->ttl);
             if (peer)
                 ulist_add(&peers, &peer->uchain);
         }
+        line_nb++;
     }
 
     fclose(file);
@@ -742,7 +763,7 @@ static void usage(void)
              "[-p <period>] "
              "[-d <dead>] "
              "[-c config_file] "
-             "@<src host> <dest host>" );
+             "[<src host> [<dest host>]]" );
     msg_Raw( NULL, "    host format: [<connect addr>[:<connect port>]][@[<bind addr][:<bind port>]]" );
     msg_Raw( NULL, "    -y: priority of this instance (32 bits) [1]" );
     msg_Raw( NULL, "    -p: periodicity of announces in 27 MHz units [27000000/5]" );
@@ -936,20 +957,20 @@ int main( int i_argc, char **pp_argv )
     if ( psz_syslog_tag != NULL )
         msg_Openlog( psz_syslog_tag, LOG_NDELAY, LOG_USER );
 
-    while (optind < i_argc) {
+    if (optind < i_argc) {
+        /* create input */
         const char *conf = pp_argv[optind++];
+        struct peer *peer = peer_create(NULL, true, conf, config.ttl);
+        assert(peer);
+        peer->persistent = true;
+        ulist_add(&config.peers, &peer->uchain);
+    }
 
-        struct peer *peer = config_find_peer(&config, conf);
-        if (peer)
-        {
-            msg_Warn( NULL, "ignore duplicated peer" );
-            continue;
-        }
-
-        peer = peer_create(NULL, conf, config.ttl);
-        if (!peer)
-            continue;
-
+    if (optind < i_argc) {
+        /* create output */
+        const char *conf = pp_argv[optind++];
+        struct peer *peer = peer_create(NULL, false, conf, config.ttl);
+        assert(peer);
         peer->persistent = true;
         ulist_add(&config.peers, &peer->uchain);
     }
