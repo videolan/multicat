@@ -104,6 +104,7 @@ static bool (*pf_Delay)(void) = NULL;
 static void (*pf_ExitRead)(void);
 static ssize_t (*pf_Write)( const void *p_buf, size_t i_len );
 static void (*pf_ExitWrite)(void);
+static bool b_non_ts_warned = false;
 
 static void usage(void)
 {
@@ -1180,6 +1181,13 @@ int main( int i_argc, char **pp_argv )
         {
             if ( !rtp_check_hdr( p_read_buffer ) )
                 msg_Warn( NULL, "invalid RTP packet received" );
+            if ( rtp_get_type(p_read_buffer) != RTP_TYPE_TS ) {
+                if ( !b_non_ts_warned )
+                    msg_Warn( NULL, "input isn't MPEG transport stream, "
+                                    "dropping..." );
+                b_non_ts_warned = true;
+                goto dropped_packet;
+            }
             p_payload = rtp_payload( p_read_buffer );
             i_payload_size = p_read_buffer + i_read_size - p_payload;
         }
