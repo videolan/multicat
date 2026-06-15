@@ -558,6 +558,7 @@ int OpenSocketSafe( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
     in_addr_t i_raw_srcaddr = INADDR_ANY;
     int i_raw_srcport = 0;
     char *psz_ifname = NULL;
+    int i_rcvbufsz = 0x80000;
 #ifdef __FreeBSD__
     int hincl = 1;
 #endif
@@ -681,6 +682,8 @@ int OpenSocketSafe( const char *_psz_arg, int i_ttl, uint16_t i_bind_port,
                 i_raw_srcport = strtol( ARG_OPTION("srcport="), NULL, 0 );
             else if ( IS_OPTION("fd=") )
                 i_fd = strtol( ARG_OPTION("fd="), NULL, 0 );
+            else if ( IS_OPTION("rcvbufsz=") )
+                i_rcvbufsz = strtol( ARG_OPTION("rcvbufsz="), NULL, 0 );
             else
                 msg_Warn( NULL, "unrecognized option %s", psz_token2 );
 
@@ -827,10 +830,25 @@ normal_bind:
 
     if ( !*pb_tcp )
     {
-        /* Increase the receive buffer size to 1/2MB (8Mb/s during 1/2s) to
-         * avoid packet loss caused by scheduling problems */
-        i = 0x80000;
-        setsockopt( i_fd, SOL_SOCKET, SO_RCVBUF, (void *) &i, sizeof( i ) );
+        /* Increase the receive buffer size to avoid packet loss caused by scheduling
+         * problems */
+        i = i_rcvbufsz;
+        if ( setsockopt( i_fd, SOL_SOCKET, SO_RCVBUF, (void *) &i, sizeof( i ) ) < 0 )
+        {
+            msg_Err( NULL, "couldn't adjust socket receive buffer size to %d (%s)",
+                i_rcvbufsz, strerror(errno) );
+        }
+        size_t len = sizeof(i);
+        if ( getsockopt( i_fd, SOL_SOCKET, SO_RCVBUF, (void *) &i, (void *) &len ) < 0 )
+        {
+            msg_Err( NULL, "couldn't retrieve socket receive buffer size (%s)",
+                strerror(errno) );
+        } else {
+            /* setsockopt doubles requested value, getsockopt returns the doubled value */
+            if ( i / 2 < i_rcvbufsz )
+                msg_Err( NULL, "tried to adjust receive buffer to %d but ended up with %d",
+                    i_rcvbufsz, i / 2);
+        }
 
         /* Join the multicast group if the socket is a multicast address */
         if ( bind_addr.ss.ss_family == AF_INET
